@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "openai": "^7.5.0",
+    "pdf-parse": "^1.1.1",
+    "puppeteer": "^25.8.0"
+  }
+}

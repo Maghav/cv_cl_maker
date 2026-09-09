@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenClaw — Job Application Pipeline</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --border:#334155; --accent:#38bdf8; --accent2:#0ea5e9; --text:#e2e8f0; --muted:#94a3b8; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444; }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .wrap{width:100%;max-width:560px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px 24px;box-shadow:0 12px 40px rgba(0,0,0,.4)}
+  h1{margin:0 0 4px;font-size:22px;letter-spacing:.3px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:20px;line-height:1.5}
+  label{display:block;font-size:13px;font-weight:600;margin:14px 0 6px;color:#cbd5e1}
+  input[type=text],input[type=password],select{width:100%;padding:11px 12px;border:1px solid var(--border);border-radius:10px;background:#0f172a;color:var(--text);font-size:14px;outline:none}
+  input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(56,189,248,.2)}
+  .hint{font-size:11px;color:var(--muted);margin-top:4px}
+  .row{display:flex;gap:10px}
+  .row>div{flex:1}
+  button{width:100%;margin-top:18px;padding:13px;border:none;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0f172a;font-weight:800;font-size:15px;cursor:pointer;letter-spacing:.3px}
+  button:disabled{opacity:.6;cursor:not-allowed}
+  button:hover:not(:disabled){filter:brightness(1.07)}
+  .status{margin-top:16px;padding:12px 14px;border-radius:10px;font-size:13px;line-height:1.5;display:none;white-space:pre-wrap;word-break:break-word}
+  .status.show{display:block}
+  .status.info{background:#0c4a6e;color:#bae6fd;border:1px solid #075985}
+  .status.ok{background:#052e16;color:#86efac;border:1px solid #14532d}
+  .status.err{background:#450a0a;color:#fecaca;border:1px solid #7f1d1d}
+  .status.warn{background:#451a03;color:#fde68a;border:1px solid #78350f}
+  .links{margin-top:10px;display:flex;gap:10px;flex-wrap:wrap}
+  .links a{font-size:12px;color:var(--accent);text-decoration:none;border:1px solid var(--border);padding:6px 10px;border-radius:8px;background:#0f172a}
+  .links a:hover{border-color:var(--accent)}
+  .cv-list{margin-top:10px;padding:10px 12px;background:#0f172a;border:1px solid var(--border);border-radius:10px;font-size:12px;color:var(--muted)}
+  .cv-list strong{color:var(--text)}
+  details{margin-top:14px}
+  details summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--accent);list-style:none}
+  details summary::-webkit-details-marker{display:none}
+  .small{font-size:11px;color:var(--muted);margin-top:14px;text-align:center}
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>🚀 Job Application Pipeline</h1>
+    <p class="sub">Paste any job link (SEEK, LinkedIn, Indeed, TradeMe, etc.). OpenClaw will scrape the description, merge your CVs into <b>one</b> new ATS-optimised CV + cover letter, check the ATS score via the <b>ats.onl9.club API</b>, iterate if &lt; 85%, and produce a <b>2-page CV</b> + <b>1-page cover letter</b> PDF.</p>
+
+    <div id="cvList" class="cv-list">Checking CVs…</div>
+
+    <form id="jobForm">
+      <label for="jobLink">Job link *</label>
+      <input type="text" id="jobLink" name="jobLink" placeholder="https://www.seek.co.nz/job/..." required>
+      <p class="hint">Any career site works — just paste the full URL.</p>
+
+      <details>
+        <summary>⚙️ Advanced — LLM settings (optional)</summary>
+        <div style="margin-top:10px">
+          <label for="llmApiKey">LLM API key</label>
+          <input type="password" id="llmApiKey" placeholder="Leave blank to use .env provider chain">
+          <p class="hint">If blank, the pipeline uses the prioritized provider chain in .env (OpenRouter → Groq → Nvidia NIM). You can also paste your own override key.</p>
+          <div class="row">
+            <div>
+              <label for="llmModel">Model</label>
+              <input type="text" id="llmModel" placeholder="nvidia/nemotron-3-super-120b-a12b:free">
+            </div>
+            <div>
+              <label for="llmBaseUrl">Base URL</label>
+              <input type="text" id="llmBaseUrl" placeholder="https://openrouter.ai/api/v1">
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <button type="submit" id="submitBtn">🚀 Start Pipeline</button>
+    </form>
+
+    <div id="status" class="status"></div>
+    <div id="links" class="links" style="display:none"></div>
+    <p class="small">CVs source: <code>workspace/my_cvs/*.pdf</code> &nbsp;|&nbsp; Output: <code>workspace/output/</code> &nbsp;|&nbsp; Also trigger via Telegram — send the job link to your bot.</p>
+  </div>
+</div>
+
+<script>
+const statusEl = document.getElementById('status');
+const linksEl = document.getElementById('links');
+const btn = document.getElementById('submitBtn');
+const form = document.getElementById('jobForm');
+
+function showStatus(text, cls) {
+  statusEl.textContent = text;
+  statusEl.className = 'status show ' + cls;
+}
+function showLinks(files) {
+  if (!files || !files.length) { linksEl.style.display='none'; return; }
+  linksEl.innerHTML = files.map(f => `<a href="/api/download/${encodeURIComponent(f)}" target="_blank">⬇ ${f}</a>`).join('');
+  linksEl.style.display='flex';
+}
+
+async function loadCvs() {
+  try {
+    const r = await fetch('/api/cvs');
+    const j = await r.json();
+    const el = document.getElementById('cvList');
+    if (!j.cvs || j.cvs.length === 0) {
+      el.innerHTML = '⚠️ No PDFs found in <code>my_cvs/</code>. Add 2–3 CV PDFs there — the pipeline merges <strong>all</strong> of them into one new CV.';
+      el.style.borderColor = '#7f1d1d';
+    } else {
+      el.innerHTML = `✅ <strong>${j.cvs.length} CV(s) detected</strong> (will be merged into one new CV):<br>` + j.cvs.map(c=>`• ${c.name} (${(c.size/1024).toFixed(0)} KB)`).join('<br>');
+      el.style.borderColor = '#14532d';
+    }
+  } catch(e) {
+    document.getElementById('cvList').textContent = 'Could not check CVs: ' + e.message;
+  }
+}
+loadCvs();
+
+// Also handle ?job= prefill (for Telegram handoff or bookmarklet)
+const qp = new URLSearchParams(location.search);
+if (qp.get('job')) document.getElementById('jobLink').value = qp.get('job');
+
+let pollTimer = null;
+async function pollStatus(workflowId) {
+  try {
+    const r = await fetch('/api/pipeline-status/' + encodeURIComponent(workflowId));
+    const j = await r.json();
+    if (j.status === 'completed' && j.outputFiles && j.outputFiles.length) {
+      showStatus(`✅ Pipeline complete! ATS: ${j.atsScore ?? '?'}% — ${j.outputFiles.length} file(s) in output/`, 'ok');
+      showLinks(j.outputFiles);
+      btn.disabled = false; btn.textContent = '🚀 Start Pipeline';
+      clearInterval(pollTimer);
+    }
+  } catch(e) {}
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const jobLink = document.getElementById('jobLink').value.trim();
+  if (!jobLink) { showStatus('Please paste a job link.', 'err'); return; }
+  try { new URL(jobLink); } catch { showStatus('That does not look like a valid URL.', 'err'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Starting…';
+  linksEl.style.display='none';
+  showStatus('⏳ Starting pipeline… this takes 2–5 minutes (scraping, LLM, ATS check, PDFs). You can leave this tab open.', 'info');
+
+  const payload = {
+    jobLink,
+    llmApiKey: document.getElementById('llmApiKey').value.trim() || undefined,
+    llmModel: document.getElementById('llmModel').value.trim() || undefined,
+    llmBaseUrl: document.getElementById('llmBaseUrl').value.trim() || undefined,
+  };
+
+  try {
+    const r = await fetch('/api/start-pipeline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const j = await r.json();
+    if (!r.ok || !j.success) {
+      showStatus('❌ ' + (j.error || 'Failed to start pipeline'), 'err');
+      btn.disabled = false; btn.textContent = '🚀 Start Pipeline';
+      return;
+    }
+    showStatus(`✅ Pipeline started — workflow ${j.workflowId}\nJob: ${j.jobLink}\nEstimated time: ${j.estimatedTime}\n\nPolling for completion…`, 'info');
+    btn.innerHTML = '<span class="spinner"></span> Running…';
+    clearInterval(pollTimer);
+    pollTimer = setInterval(() => pollStatus(j.workflowId), 8000);
+    // Also poll once soon
+    setTimeout(() => pollStatus(j.workflowId), 4000);
+  } catch(err) {
+    showStatus('❌ Could not reach server: ' + err.message, 'err');
+    btn.disabled = false; btn.textContent = '🚀 Start Pipeline';
+  }
+});
+</script>
+</body>
+</html>

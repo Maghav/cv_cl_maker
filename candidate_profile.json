@@ -1,0 +1,242 @@
+{
+  "profileVersion": 1,
+  "sourceFiles": [
+    "my_cvs/cv_support_infrastructure.pdf",
+    "my_cvs/cv_linux_devops.pdf"
+  ],
+  "name": "MAGHAV AHUJA",
+  "contact": {
+    "email": "maghavahuja01@gmail.com",
+    "phone": "+64 (022) 807-9079",
+    "location": "Auckland, New Zealand",
+    "linkedin": "linkedin.com/in/maghavahuja",
+    "github": "github.com/maghavahuja"
+  },
+  "workingRights": "New Zealand Post-Study Work Visa - valid to August 2027",
+  "summaryVariants": {
+    "serviceDesk": "IT support and infrastructure professional with New Zealand experience providing remote, on-site and multi-client technical support. Hands-on with Windows Server, Microsoft 365, Azure AD/Entra ID, user access, networking, VPNs, cloud services and ticket escalation. Known for clear customer communication, careful documentation, practical troubleshooting and automation with Python, Bash and PowerShell. Brings additional Linux, Azure, AWS, monitoring and hardware support experience, with full New Zealand work rights through August 2027.",
+    "systems": "Systems and infrastructure professional experienced in technical support, systems administration, troubleshooting and documented service improvement across education, enterprise and cloud environments. Hands-on with Windows and Linux systems, Microsoft 365, Azure AD/Entra ID, Azure, AWS, networking, databases, monitoring and automation. Comfortable translating user needs into trackable technical work, managing competing priorities and collaborating with clients and engineering teams. Holds a Master of Applied Technologies and New Zealand work rights through August 2027.",
+    "technicalSupport": "Technical support and infrastructure professional with experience resolving user, system, network, cloud and hosting issues through remote, on-site, ticket, chat, email and customer-facing channels. Combines clear communication and methodical troubleshooting with hands-on knowledge of Windows, Linux, Microsoft 365, Azure AD/Entra ID, networking, cPanel/WHM, cloud platforms and hardware. Experienced in escalation, root-cause investigation, knowledge documentation and continuous learning, with New Zealand work rights through August 2027.",
+    "devops": "Linux and cloud infrastructure professional experienced in production support, server administration, automation and incident response across Azure and AWS. Hands-on with Ubuntu, CentOS/RHEL, Terraform, Ansible, Python, Bash, PowerShell, CI/CD, NGINX, PostgreSQL, Zabbix, Prometheus and Grafana. Combines practical systems troubleshooting with user support, documentation and on-call experience. Holds New Zealand work rights through August 2027."
+  },
+  "skills": [
+    {
+      "category": "Service Desk & Service Delivery",
+      "text": "L1/L2 and remote support, ticket management, incident diagnosis, escalation, service documentation and multi-client support",
+      "tags": ["service desk", "help desk", "technical support", "ticket", "incident", "escalation", "customer service", "itil", "jira"]
+    },
+    {
+      "category": "Microsoft & Identity",
+      "text": "Microsoft 365 (Exchange, Teams, SharePoint Online), Azure AD/Entra ID, user access, Power Automate and Active Directory tooling",
+      "tags": ["microsoft 365", "exchange", "teams", "sharepoint", "active directory", "entra id", "identity", "user access"]
+    },
+    {
+      "category": "Windows & End-User Systems",
+      "text": "Windows Server 2022, Windows 10/11, software and hardware support, printers, peripherals, asset records and device troubleshooting",
+      "tags": ["windows", "windows server", "hardware", "software", "printer", "asset", "device", "endpoint"]
+    },
+    {
+      "category": "Networking & Infrastructure",
+      "text": "LAN/WAN, VPN, Wi-Fi, DHCP, DNS, virtualisation, backup monitoring and infrastructure troubleshooting",
+      "tags": ["network", "networking", "lan", "wan", "vpn", "wifi", "dhcp", "dns", "infrastructure"]
+    },
+    {
+      "category": "Linux & Web Hosting",
+      "text": "Ubuntu, CentOS/RHEL/AlmaLinux, NGINX, cPanel/WHM, package management, custom deb/rpm builds and server administration",
+      "tags": ["linux", "ubuntu", "centos", "rhel", "nginx", "cpanel", "whm", "hosting", "server"]
+    },
+    {
+      "category": "Cloud & Virtual Machines",
+      "text": "Azure and AWS, Azure Resource Manager and EC2 APIs, VM lifecycle management, VPS platforms and hybrid/SMB cloud environments",
+      "tags": ["azure", "aws", "cloud", "virtual machine", "vm", "ec2", "systems administration"]
+    },
+    {
+      "category": "Automation & Scripting",
+      "text": "Python, Bash, PowerShell, YAML, Power Automate and n8n for deployment, administration, maintenance and workflow automation",
+      "tags": ["automation", "python", "bash", "powershell", "scripting", "workflow", "power automate", "n8n"]
+    },
+    {
+      "category": "DevOps & Configuration",
+      "text": "Azure DevOps, Buildbot, Jenkins, Terraform, Ansible, Docker and CI/CD pipeline support",
+      "tags": ["devops", "ci/cd", "azure devops", "buildbot", "jenkins", "terraform", "ansible", "docker"]
+    },
+    {
+      "category": "Monitoring & Data",
+      "text": "Zabbix, Prometheus, Grafana, PostgreSQL administration, alerting, backup verification and infrastructure observability",
+      "tags": ["monitoring", "observability", "zabbix", "prometheus", "grafana", "postgresql", "database", "backup"]
+    },
+    {
+      "category": "Hardware & Operations",
+      "text": "Computer and server assembly, procurement, rack mounting, fault diagnosis, repair and production on-call support",
+      "tags": ["hardware", "operations", "repair", "fault", "on-call", "production support"]
+    }
+  ],
+  "experience": [
+    {
+      "employer": "Neurix Limited",
+      "location": "Auckland, New Zealand",
+      "role": "Systems/DevOps Engineer (Casual Contract)",
+      "dates": "2025 - Present",
+      "dateNote": "Source CVs conflict between August and September 2025; month intentionally omitted.",
+      "maxBullets": 7,
+      "bullets": [
+        {
+          "text": "Deliver remote and on-site technical support for internal users and engineering teams across business systems, cloud services and IT operations.",
+          "tags": ["service desk", "technical support", "customer", "user", "incident"]
+        },
+        {
+          "text": "Administer Windows Server, networking, VPN and user-access environments while maintaining clear configurations, procedures and support documentation.",
+          "tags": ["windows server", "networking", "vpn", "access", "documentation", "systems administration"]
+        },
+        {
+          "text": "Manage Azure and AWS infrastructure, virtual machines and containerised systems, including ARM and EC2 API lifecycle tasks across 20+ VMs.",
+          "tags": ["azure", "aws", "cloud", "virtual machine", "container", "infrastructure"]
+        },
+        {
+          "text": "Administer 15+ Ubuntu and CentOS/RHEL servers with Ansible, applying consistent, version-controlled configuration across the fleet.",
+          "tags": ["linux", "ubuntu", "centos", "rhel", "ansible", "configuration"]
+        },
+        {
+          "text": "Create Python and Bash automation for deployment, server configuration, maintenance and backups, reducing manual operational work by about 40%.",
+          "tags": ["python", "bash", "automation", "deployment", "backup", "continuous improvement"]
+        },
+        {
+          "text": "Participate in production on-call support, triaging Linux, infrastructure and hardware incidents with an average response time under 15 minutes.",
+          "tags": ["on-call", "incident", "troubleshooting", "linux", "hardware", "root cause"]
+        },
+        {
+          "text": "Implement Zabbix monitoring and alerting for production servers, improving visibility and reducing mean time to detection by about 30%.",
+          "tags": ["zabbix", "monitoring", "alerting", "incident", "observability"]
+        },
+        {
+          "text": "Use Terraform to manage production cloud resources and support resilient Azure, AWS, PaaS and Linux environments with 99.9% uptime targets.",
+          "tags": ["terraform", "azure", "aws", "cloud", "infrastructure", "devops"]
+        }
+      ]
+    },
+    {
+      "employer": "Datacom NZ",
+      "location": "Auckland, New Zealand",
+      "role": "Intern",
+      "dates": "April 2025 - June 2025",
+      "dateNote": "One source continues the internship to September 2025; the shorter confirmed period is used.",
+      "maxBullets": 4,
+      "bullets": [
+        {
+          "text": "Provided help desk and technical support in a large, multi-client enterprise environment with responsive user communication and service follow-through.",
+          "tags": ["help desk", "service desk", "technical support", "customer", "enterprise"]
+        },
+        {
+          "text": "Supported Microsoft 365, Azure DevOps and cloud-based systems, collaborating with senior engineers and service-delivery teams on escalations.",
+          "tags": ["microsoft 365", "azure devops", "cloud", "escalation", "collaboration"]
+        },
+        {
+          "text": "Built and maintained clear client and internal documentation to support consistent handovers, troubleshooting and service quality.",
+          "tags": ["documentation", "knowledge base", "communication", "process", "service"]
+        },
+        {
+          "text": "Assisted Azure DevOps CI/CD work for .NET and React applications across three project teams, helping reduce deployment time by about 25%.",
+          "tags": ["azure devops", "ci/cd", "deployment", ".net", "react", "devops"]
+        }
+      ]
+    },
+    {
+      "employer": "Department of Education, Government of Delhi",
+      "location": "New Delhi, India",
+      "role": "Graduate Support Specialist",
+      "dates": "September 2022 - January 2023",
+      "maxBullets": 3,
+      "bullets": [
+        {
+          "text": "Supported daily IT operations for staff and business systems, resolving user needs through friendly, clear and consistent service.",
+          "tags": ["it operations", "technical support", "user", "customer service", "education"]
+        },
+        {
+          "text": "Maintained asset registers, operating procedures and business documentation to keep support work accurate, visible and repeatable.",
+          "tags": ["asset", "documentation", "procedure", "process", "knowledge base"]
+        },
+        {
+          "text": "Automated administrative workflows with Python and Active Directory tools, improving routine staff and system administration.",
+          "tags": ["python", "active directory", "automation", "workflow", "systems administration"]
+        }
+      ]
+    },
+    {
+      "employer": "Mitre10 MEGA",
+      "location": "Auckland, New Zealand",
+      "role": "Security Team Member",
+      "dates": "August 2025 - Present",
+      "maxBullets": 2,
+      "bullets": [
+        {
+          "text": "Maintain secure facility operations while demonstrating reliability, professionalism and clear communication in a customer-facing environment.",
+          "tags": ["customer service", "communication", "security", "operations", "reliability"]
+        },
+        {
+          "text": "Work calmly under pressure while sustaining service quality and continuing structured study of Azure, monitoring and DevOps tools.",
+          "tags": ["pressure", "service", "learning", "azure", "monitoring", "devops"]
+        }
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "name": "Cloud Application Deployment",
+      "bullets": [
+        "Deploy existing Next.js, React, .NET, Java and Node.js applications to Azure and AWS while learning cloud-native deployment and automation services.",
+        "Completed a technical assignment deploying a Next.js dashboard to AWS Amplify and deployed WordPress sites through cPanel-based hosting."
+      ],
+      "tags": ["azure", "aws", "deployment", "cloud", "next.js", "react", ".net", "java", "node.js", "wordpress"]
+    },
+    {
+      "name": "VPS, Hosting & Recovery Lab",
+      "bullets": [
+        "Configure Contabo VPS servers, Azure VMs and EC2 instances with Linux tools, hosting control panels and Bash automation for routine administration.",
+        "Compile packages from source, create custom deb packages and build Python/Bash backup workflows for repeatable server maintenance and recovery practice."
+      ],
+      "tags": ["vps", "azure", "aws", "ec2", "linux", "bash", "hosting", "backup", "recovery", "package"]
+    },
+    {
+      "name": "Nextcloud & Systems Learning Lab",
+      "bullets": [
+        "Deployed Nextcloud Files and Office as an on-premises Microsoft 365 alternative and explored enterprise identity and private-cloud integration patterns.",
+        "Complete hands-on KodeKloud, SadServers and LabEx scenarios using Terraform, Ansible, Jenkins, Docker, Kubernetes, Prometheus, Grafana and Linux troubleshooting."
+      ],
+      "tags": ["nextcloud", "microsoft 365", "identity", "learning", "terraform", "ansible", "jenkins", "docker", "kubernetes", "prometheus", "grafana"]
+    }
+  ],
+  "volunteer": [
+    {
+      "organisation": "FreeCodeCamp.org",
+      "role": "Staff Member",
+      "bullet": "Curated Linux, virtualisation and cloud-computing resources for web and YouTube publication, contributing to learning materials used by 1,000+ learners."
+    },
+    {
+      "organisation": "Shoutcoder.com",
+      "role": "Technical Support Analyst",
+      "bullet": "Supported cPanel/WHM hosting clients through WHMCS tickets, live chat and email, troubleshooting server and backup issues across 200+ tickets with 95% satisfaction."
+    }
+  ],
+  "education": [
+    {
+      "institution": "Unitec Institute of Technology",
+      "location": "Auckland, New Zealand",
+      "qualification": "Master of Applied Technologies - Data Analysis (Level 9)",
+      "dates": "February 2023 - July 2024",
+      "bullet": "Provided volunteer campus IT support for computers, printers, networking peripherals, software and user environments across 300+ requests."
+    },
+    {
+      "institution": "Maharaja Surajmal Institute",
+      "location": "New Delhi, India",
+      "qualification": "Bachelor of Computer Applications",
+      "dates": "2019 - 2022",
+      "bullet": "Built foundations in Python, JavaScript, Linux, AWS and Bash through web, deployment and Windows/Linux automation projects."
+    }
+  ],
+  "additional": [
+    "Languages: English (fluent) and Hindi (native)",
+    "Working rights: New Zealand Post-Study Work Visa, valid to August 2027",
+    "Availability: Willing to participate in on-call rotations and after-hours incident response",
+    "Interests: Automation, cloud systems, service excellence, Linux, SRE and hardware troubleshooting"
+  ]
+}
