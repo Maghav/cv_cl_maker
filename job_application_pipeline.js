@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Job Application Pipeline — OpenClaw
+ * Job Application Pipeline
  *
  * Workflow:
  *  1. Accept job link (SEEK / LinkedIn / Indeed / TradeMe / generic)
@@ -9,9 +9,9 @@
  *  4. Build a complete, factual CV + cover letter from candidate_profile.json
  *  5. Check ATS score via the ats.onl9.club API (reporting only; never rewrite facts)
  *  6. Generate PDFs with deterministic layout fitting (CV exactly 2 pages, CL exactly 1 page)
- *  8. Save to output/ + optional Telegram notification
+ *  7. Save to output/ + optional Notion sync & Telegram notification
  *
- * LLM: uses OpenClaw's own API if available (M_JOB_API_*) or user-provided LLM_API_KEY.
+ * LLM: multi-provider fallback (OpenRouter, Groq, NVIDIA NIM, OpenAI, or LLM_API_KEY).
  * ATS check: ats.onl9.club API (ATS_API_BASE_URL) — no browser automation needed.
  */
 
@@ -19,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const puppeteer = require('puppeteer');
+const { syncJobToNotion, cleanupOutputFiles } = require('./notion_sync');
 let pdfParse;
 try { pdfParse = require('pdf-parse'); } catch (_) {}
 
@@ -337,8 +338,8 @@ async function validateProviderChain(chain) {
             try {
                 const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${p.apiKey}` };
                 if (/openrouter/i.test(p.baseURL)) {
-                    headers['HTTP-Referer'] = 'https://openclaw.app';
-                    headers['X-Title'] = 'OpenClaw Workflow';
+                    headers['HTTP-Referer'] = 'https://github.com/maghavahuja/jobs-automation';
+                    headers['X-Title'] = 'Job Application Pipeline';
                 }
                 const isReasoning = p.model.includes('gpt-oss') || p.model.includes('reasoning') || p.model.includes('nemotron');
                 const body = {
@@ -388,12 +389,29 @@ ${description.substring(0, 5000)}`;
     try {
         const out = await callLLM(prompt, 'You extract entity names from text. Reply with the name only, nothing else.', chain);
         const name = (out || '').replace(/["'.*#`]/g, '').split('\n').map(s => s.trim()).filter(Boolean)[0] || '';
-        if (name.length >= 3 && name.length <= 60 && !/^(unknown|n\/a|none|not specified|the company|hiring company)$/i.test(name)) {
+        if (name.length >= 2 && name.length <= 60 && !/^(unknown|n\/a|none|not specified|the company|hiring company)$/i.test(name)) {
             return name;
         }
     } catch (_) {}
     return null;
 }
+
+// Fallback job title extraction via LLM when scraped title is generic portal junk
+async function extractJobTitleViaLLM(description, chain) {
+    const prompt = `From this job advertisement, identify the exact JOB TITLE / POSITION being advertised (e.g. "Systems Administrator", "Service Desk Analyst"). Do NOT return generic terms like "Current Job Opportunities", "Careers", or "Job Opening". Reply with ONLY the job title (max 80 characters). No quotes, no explanation. If truly undeterminable, reply exactly: Unknown.
+
+Job ad:
+${description.substring(0, 5000)}`;
+    try {
+        const out = await callLLM(prompt, 'You extract job titles from job advertisements. Reply with the exact title only, nothing else.', chain);
+        const title = (out || '').replace(/["'.*#`]/g, '').split('\n').map(s => s.trim()).filter(Boolean)[0] || '';
+        if (title.length >= 3 && title.length <= 80 && !/^(unknown|n\/a|none|not specified|position|job|career|opportunities|openings)$/i.test(title)) {
+            return title;
+        }
+    } catch (_) {}
+    return null;
+}
+
 
 async function callLLM(prompt, systemPrompt, configOrChain) {
     // Accept either a single config or a provider chain array
@@ -404,7 +422,7 @@ async function callLLM(prompt, systemPrompt, configOrChain) {
     const providers = fullChain.length && fullChain[0].apiKey ? fullChain : getProviderChain(configOrChain);
 
     if (!providers.length || !providers[0].apiKey) {
-        throw new Error('No LLM API key configured. Set LLM_API_KEY / OPENROUTER_API_KEY / M_JOB_NIM_API_KEY / BAI_API_KEY, or ensure OpenClaw M_JOB_API_KEY is set.');
+        throw new Error('No LLM API key configured. Set OPENROUTER_API_KEY / GROQ_API_KEY / NIM_API_KEY / LLM_API_KEY in .env.');
     }
 
     let lastError = null;
@@ -414,11 +432,11 @@ async function callLLM(prompt, systemPrompt, configOrChain) {
         const isLastProvider = pIdx === providers.length - 1;
         log(`LLM call → ${model} @ ${baseURL} [${name}] (prompt ${prompt.length} chars)${providers.length > 1 ? ` [${pIdx + 1}/${providers.length}]` : ''}`);
 
-const OpenAI = require('openai');
+        const OpenAI = require('openai');
         const defaultHeaders = {};
         if (/openrouter/i.test(baseURL)) {
-            defaultHeaders['HTTP-Referer'] = 'https://openclaw.app';
-            defaultHeaders['X-Title'] = 'OpenClaw Workflow';
+            defaultHeaders['HTTP-Referer'] = 'https://github.com/maghavahuja/jobs-automation';
+            defaultHeaders['X-Title'] = 'Job Application Pipeline';
         }
         // Timeout of 60s per attempt prevents multi-minute hangs on degraded endpoints
         const client = new OpenAI({ apiKey, baseURL, timeout: 60000, maxRetries: 0, defaultHeaders });
@@ -839,7 +857,7 @@ async function scrapeJobDescription(jobLink, browserInstance) {
                     company: typeof org === 'string' ? org.trim() : (org && typeof org.name === 'string' ? org.name.trim() : '')
                 };
             }).catch(() => ({ title: '', company: '' }));
-            const junkTitleRe = /^(position|job|jobs|careers?|current vacancies|vacancies|home|search jobs?|apply now|.*\bwebsite\b.*|this role is no longer available|job not found|page not found|404|404 not found|role not found)$/i;
+            const junkTitleRe = /^(position|job|jobs|careers?|current vacancies|vacancies|home|search jobs?|apply now|.*\bwebsite\b.*|this role is no longer available|job not found|page not found|404|404 not found|role not found|current job (opportunities|openings)|job (opportunities|openings)|career opportunities|work for us|join our team|working at .*)$/i;
             if (structured.title && (!jobTitle || junkTitleRe.test(jobTitle.trim()))) jobTitle = structured.title.substring(0, 80);
             if (structured.company && (!companyName || companyName === 'Company')) companyName = structured.company.substring(0, 60);
 
@@ -857,6 +875,7 @@ async function scrapeJobDescription(jobLink, browserInstance) {
                     /\bTechnical Support Engineer\b/i,
                     /\bIT Service Desk Technician\b/i,
                     /\bIT Support Specialist\b/i,
+                    /\bSystems Administrator\b/i,
                     /\bSystems Engineer\b/i,
                     /\bDevOps Engineer\b/i
                 ];
@@ -869,13 +888,19 @@ async function scrapeJobDescription(jobLink, browserInstance) {
                 if (descCompanyMatch) {
                     companyName = descCompanyMatch[1].trim().substring(0, 60);
                 } else {
-                    // Last resort: use hostname-derived name (skip aggregators and job boards)
+                    // Last resort: use hostname-derived name (skip aggregators and job boards, resolve subdomains)
                     try {
-                        const urlHost = new URL(jobLink).hostname.replace('www.', '').split('.')[0].toLowerCase();
+                        const parsedHost = new URL(jobLink).hostname.replace(/^www\./, '').toLowerCase();
+                        const hostParts = parsedHost.split('.');
                         const aggregatorHosts = ['jobs', 'bfound', 'hireeing', 'entireless', 'sydicom', 'indeed', 'seek', 'trademe', 'linkedin', 'glassdoor', 'wellfound', 'builtin', 'remoteok', 'weworkremotely', 'greenhouse', 'lever', 'jobvite'];
-                        if (urlHost && urlHost.length > 2 && !aggregatorHosts.includes(urlHost)) {
-                            companyName = urlHost.charAt(0).toUpperCase() + urlHost.slice(1);
-                        } else if (urlHost === 'bfound') {
+                        const subdomainPrefixes = ['new', 'careers', 'jobs', 'recruitment', 'work', 'apply', 'boards', 'app', 'portal', 'talent'];
+                        let hostCandidate = hostParts[0];
+                        if (subdomainPrefixes.includes(hostCandidate) && hostParts.length > 2) {
+                            hostCandidate = hostParts[1];
+                        }
+                        if (hostCandidate && hostCandidate.length >= 2 && !aggregatorHosts.includes(hostCandidate) && !subdomainPrefixes.includes(hostCandidate)) {
+                            companyName = hostCandidate.length <= 4 ? hostCandidate.toUpperCase() : (hostCandidate.charAt(0).toUpperCase() + hostCandidate.slice(1));
+                        } else if (hostCandidate === 'bfound') {
                             companyName = 'BfoundEmployer';
                         }
                     } catch (_) {}
@@ -883,8 +908,13 @@ async function scrapeJobDescription(jobLink, browserInstance) {
             }
             // Clean up title fallback
             if (!jobTitle || jobTitle === 'Position' || jobTitle.includes('StaffCV') || jobTitle === '|' || jobTitle.length < 4 || /\bwebsite\b/i.test(jobTitle) || junkTitleRe.test(jobTitle.trim())) {
-                const titleFromDesc = description.match(/(Service Desk Analyst|Systems Specialist|Technical Support Engineer|IT Service Desk Technician|Systems Engineer|IT Support Specialist|DevOps Engineer|Network Engineer|Cloud Engineer|Service Desk[^\n]{0,30})/i);
-                if (titleFromDesc) jobTitle = titleFromDesc[1].trim().substring(0, 80);
+                const firstLine = (description || '').split('\n').map(s => s.trim()).filter(Boolean)[0] || '';
+                if (firstLine && firstLine.length >= 4 && firstLine.length <= 60 && !junkTitleRe.test(firstLine) && !/^(about|welcome|http|www)/i.test(firstLine)) {
+                    jobTitle = firstLine;
+                } else {
+                    const titleFromDesc = description.match(/(Service Desk Analyst|Systems Specialist|Technical Support Engineer|IT Service Desk Technician|Systems Administrator|Systems Engineer|IT Support Specialist|DevOps Engineer|Network Engineer|Cloud Engineer|Service Desk[^\n]{0,30})/i);
+                    if (titleFromDesc) jobTitle = titleFromDesc[1].trim().substring(0, 80);
+                }
             }
         } catch (_) {}
 
@@ -1687,7 +1717,7 @@ class JobApplicationPipeline {
         this.llmConfig = resolveLLMConfig(config);
         this.llmChain = getProviderChain(config);
         this.workflowId = crypto.randomUUID();
-        // Workspace root is D:\OpenClaw\workspace (where this file lives + node_modules)
+        // Workspace root is current directory (__dirname)
         this.workspaceRoot = path.resolve(__dirname);
         // my_cvs and output are direct children of workspaceRoot
         this.myCvsDir = path.join(this.workspaceRoot, 'my_cvs');
@@ -1698,13 +1728,37 @@ class JobApplicationPipeline {
         this.maxIterations = Number.isFinite(maxIterEnv) && maxIterEnv >= 1 ? maxIterEnv : 5;
         this.skipAts = config.skipAts === true || /^(1|true|yes)$/i.test(process.env.JOB_PIPELINE_SKIP_ATS || '');
         this.atsMaxRetries = 2;
+        this.createdFiles = new Set();
+    }
+
+    trackCreatedFile(filePath) {
+        if (!this.createdFiles) this.createdFiles = new Set();
+        if (filePath) this.createdFiles.add(path.resolve(filePath));
+        return filePath;
+    }
+
+    cleanupWorkflowFiles(options = {}) {
+        const extraFiles = Array.from(this.createdFiles || []);
+        if (options.cvPdfPath) extraFiles.push(options.cvPdfPath);
+        if (options.clPdfPath) extraFiles.push(options.clPdfPath);
+
+        const prefixes = [];
+        if (options.cvFileName) prefixes.push(options.cvFileName);
+        if (options.clFileName) prefixes.push(options.clFileName);
+
+        const cleaned = cleanupOutputFiles(this.outputDir, extraFiles, prefixes);
+        for (const f of cleaned) {
+            log(`  [cleanup] Deleted workflow file: ${path.basename(f)}`);
+        }
+        return cleaned;
     }
 
     async run() {
         log('='.repeat(60));
-        log('Job Application Pipeline — OpenClaw');
+        log('Job Application Pipeline');
         log(`Workflow: ${this.workflowId}`);
         log(`Job link: ${this.jobLink}`);
+        this.createdFiles = new Set();
         this.llmChain = await validateProviderChain(this.llmChain);
         log(`Active LLM chain: ${this.llmChain.map(p => `${p.name}:${p.model}`).join(' → ')}`);
         log('='.repeat(60));
@@ -1727,15 +1781,18 @@ class JobApplicationPipeline {
             if (!jobDescription || jobDescription.length < 100) throw new Error('Failed to scrape job description (too short or empty)');
             fs.writeFileSync(path.join(this.outputDir, 'job_description.txt'), jobDescription);
             fs.writeFileSync(path.join(this.outputDir, 'job_meta.json'), JSON.stringify({ link: this.jobLink, ...jobInfo }, null, 2));
+            this.trackCreatedFile(path.join(this.outputDir, 'job_description.txt'));
+            this.trackCreatedFile(path.join(this.outputDir, 'job_meta.json'));
 
             // Company fallback via LLM — filename/cover letter must never say just "Company"
-            // Junk names scraped from careers-site chrome ("Careers", "MERCURY WEBSITE", "Jobs")
+            // Junk names scraped from careers-site chrome ("Careers", "MERCURY WEBSITE", "Jobs", "New")
             // are not employers either — run the LLM fallback for those too.
-            const junkCompanyRe = /^(company|careers?|website|jobs?|job search|search jobs|home|apply now|careers? ?website|seek|indeed|linkedin|trademe|glassdoor|bfoundemployer|mercury website|hireeing|entireless|sydicom|wellfound|builtin|remoteok|weworkremotely)$/i;
+            const junkCompanyRe = /^(company|careers?|website|jobs?|job search|search jobs|home|apply now|careers? ?website|seek|indeed|linkedin|trademe|glassdoor|bfoundemployer|mercury website|hireeing|entireless|sydicom|wellfound|builtin|remoteok|weworkremotely|new|portal|vacancies|openings|opportunities)$/i;
             const companyIsJunk = !jobInfo.companyName
                 || jobInfo.companyName === 'Company'
                 || jobInfo.companyName === 'BfoundEmployer'
                 || jobInfo.companyName.length < 3
+                || (jobInfo.companyName.length === 3 && /^(new|job|app|net|org|com)$/i.test(jobInfo.companyName))
                 || junkCompanyRe.test(jobInfo.companyName.trim())
                 || /\bwebsite\b/i.test(jobInfo.companyName);
             if (companyIsJunk) {
@@ -1754,10 +1811,27 @@ class JobApplicationPipeline {
                 fs.writeFileSync(path.join(this.outputDir, 'job_meta.json'), JSON.stringify({ link: this.jobLink, ...jobInfo }, null, 2));
             }
 
+            // Job Title fallback via LLM when scraped title is generic portal junk
+            const junkTitleRe = /^(position|job|jobs|careers?|current vacancies|vacancies|home|search jobs?|apply now|.*\bwebsite\b.*|this role is no longer available|job not found|page not found|404|404 not found|role not found|current job (opportunities|openings)|job (opportunities|openings)|career opportunities|work for us|join our team|working at .*)$/i;
+            const titleIsJunk = !jobInfo.jobTitle
+                || jobInfo.jobTitle === 'Position'
+                || jobInfo.jobTitle.length < 4
+                || junkTitleRe.test(jobInfo.jobTitle.trim());
+            if (titleIsJunk) {
+                log(`Job title "${jobInfo.jobTitle || '(none)'}" appears generic or invalid — extracting via LLM...`);
+                const llmTitle = await extractJobTitleViaLLM(jobDescription, this.llmChain).catch(() => null);
+                if (llmTitle) {
+                    jobInfo.jobTitle = llmTitle;
+                    log(`LLM-extracted job title: "${llmTitle}"`);
+                }
+                fs.writeFileSync(path.join(this.outputDir, 'job_meta.json'), JSON.stringify({ link: this.jobLink, ...jobInfo }, null, 2));
+            }
+
             // Step 2: Load + merge CVs for traceability, then load the curated factual profile.
             const { mergedText, files } = await extractAndMergeCVs(this.myCvsDir);
             if (!mergedText || mergedText.length < 200) throw new Error(`No usable CV text found in my_cvs/ (found ${files.length} PDF(s), merged ${mergedText.length} chars)`);
             fs.writeFileSync(path.join(this.outputDir, 'merged_cvs_source.txt'), mergedText);
+            this.trackCreatedFile(path.join(this.outputDir, 'merged_cvs_source.txt'));
             const candidateProfile = loadCandidateProfile(this.workspaceRoot);
 
             // Step 3: Build one complete CV + cover letter from the factual profile.
@@ -1778,6 +1852,8 @@ class JobApplicationPipeline {
             log('CV integrity gate passed: all sections, employers, projects and education are present');
             fs.writeFileSync(path.join(this.outputDir, 'optimized_cv.md'), currentCV);
             fs.writeFileSync(path.join(this.outputDir, 'cover_letter.md'), currentCL);
+            this.trackCreatedFile(path.join(this.outputDir, 'optimized_cv.md'));
+            this.trackCreatedFile(path.join(this.outputDir, 'cover_letter.md'));
             log(`Initial CV (${currentCV.length} chars) + CL (${currentCL.length} chars) saved`);
 
             // Step 4 & 5: ATS check loop via the ats.onl9.club API — keep best CV.
@@ -1897,6 +1973,7 @@ Output ONLY the corrected Markdown CV starting with "# MAGHAV AHUJA".`;
             // Save ATS report
             try {
                 fs.writeFileSync(path.join(this.outputDir, 'ats_result.json'), JSON.stringify({ score: finalScore, passed: finalScore >= 85, iterations: iteration, link: this.jobLink }, null, 2));
+                this.trackCreatedFile(path.join(this.outputDir, 'ats_result.json'));
             } catch (_) {}
 
             // Regenerate cover letter from the final (best) CV so it stays aligned
@@ -1915,6 +1992,7 @@ Write 1 page (300-380 words), NZ English, date + Hiring Team + Re: + greeting + 
                     const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error('Cover letter regen timed out after 45s')), 45000));
                     currentCL = await Promise.race([clPromise, timeoutPromise]);
                     fs.writeFileSync(path.join(this.outputDir, 'cover_letter.md'), currentCL);
+                    this.trackCreatedFile(path.join(this.outputDir, 'cover_letter.md'));
                     log(`Cover letter regenerated (${currentCL.length} chars)`);
                 } catch (e) {
                     log(`Cover letter regen failed, keeping original: ${e.message}`);
@@ -1933,8 +2011,16 @@ Write 1 page (300-380 words), NZ English, date + Hiring Team + Re: + greeting + 
                 if (fs.existsSync(pdfPath) || fs.existsSync(mdPath)) {
                     const ts = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
                     try {
-                        if (fs.existsSync(pdfPath)) fs.copyFileSync(pdfPath, path.join(this.outputDir, `${base}_${ts}.pdf`));
-                        if (fs.existsSync(mdPath)) fs.copyFileSync(mdPath, path.join(this.outputDir, `${base}_${ts}.md`));
+                        if (fs.existsSync(pdfPath)) {
+                            const archPdf = path.join(this.outputDir, `${base}_${ts}.pdf`);
+                            fs.copyFileSync(pdfPath, archPdf);
+                            this.trackCreatedFile(archPdf);
+                        }
+                        if (fs.existsSync(mdPath)) {
+                            const archMd = path.join(this.outputDir, `${base}_${ts}.md`);
+                            fs.copyFileSync(mdPath, archMd);
+                            this.trackCreatedFile(archMd);
+                        }
                         log(`Archived previous ${base} → ${base}_${ts}.*`);
                     } catch (_) {}
                 }
@@ -1944,11 +2030,17 @@ Write 1 page (300-380 words), NZ English, date + Hiring Team + Re: + greeting + 
             fs.writeFileSync(path.join(this.outputDir, `${clFileName}.md`), currentCL);
             fs.writeFileSync(path.join(this.outputDir, 'optimized_cv.md'), currentCV);
             fs.writeFileSync(path.join(this.outputDir, 'cover_letter.md'), currentCL);
+            this.trackCreatedFile(path.join(this.outputDir, `${cvFileName}.md`));
+            this.trackCreatedFile(path.join(this.outputDir, `${clFileName}.md`));
+            this.trackCreatedFile(path.join(this.outputDir, 'optimized_cv.md'));
+            this.trackCreatedFile(path.join(this.outputDir, 'cover_letter.md'));
 
             log(`--- Generating PDFs with page-limit enforcement (${cvFileName}.pdf → 2 pages, ${clFileName}.pdf → 1 page) ---`);
             log('Target: a complete 2-page CV and polished 1-page cover letter; typography is fitted without rewriting facts');
             let cvPdfResult = await generatePdfWithPageCheck(currentCV, path.join(this.outputDir, `${cvFileName}.pdf`), 2, cvMarkdownToHtml, browser);
             let clPdfResult = await generatePdfWithPageCheck(currentCL, path.join(this.outputDir, `${clFileName}.pdf`), 1, coverLetterMarkdownToHtml, browser);
+            this.trackCreatedFile(path.join(this.outputDir, `${cvFileName}.pdf`));
+            this.trackCreatedFile(path.join(this.outputDir, `${clFileName}.pdf`));
 
             // Legacy content-rewrite fitting loop is deliberately disabled. The renderer now
             // tests bounded typography profiles while preserving every factual record.
@@ -2070,6 +2162,8 @@ Output ONLY the fixed CV in Markdown starting with "# MAGHAV AHUJA".`;
             // Update generic "latest" files only after every hard gate passes.
             fs.copyFileSync(path.join(this.outputDir, `${cvFileName}.pdf`), path.join(this.outputDir, 'Optimized_CV.pdf'));
             fs.copyFileSync(path.join(this.outputDir, `${clFileName}.pdf`), path.join(this.outputDir, 'Cover_Letter.pdf'));
+            this.trackCreatedFile(path.join(this.outputDir, 'Optimized_CV.pdf'));
+            this.trackCreatedFile(path.join(this.outputDir, 'Cover_Letter.pdf'));
 
             log('='.repeat(60));
             log('Pipeline complete');
@@ -2083,9 +2177,49 @@ Output ONLY the fixed CV in Markdown starting with "# MAGHAV AHUJA".`;
             }
             log('='.repeat(60));
 
+            // Optional Notion synchronization
+            let notionResult = null;
+            let cleanedUpFiles = [];
+            if (process.env.NOTION_API_KEY || process.env.NOTION_TOKEN) {
+                try {
+                    log('Syncing application details and PDFs to Notion...');
+                    notionResult = await syncJobToNotion({
+                        jobTitle: jobInfo.jobTitle,
+                        companyName: jobInfo.companyName,
+                        jobLink: this.jobLink,
+                        score: finalScore,
+                        cvPdfPath: cvPdfResult.outputPath,
+                        clPdfPath: clPdfResult.outputPath,
+                        cvMarkdown: currentCV,
+                        coverLetterMarkdown: currentCL,
+                        jobDescription,
+                        outputDir: this.outputDir,
+                    });
+                    if (notionResult && (notionResult.pageUrl || notionResult.success)) {
+                        log(`Notion sync successful: ${notionResult.pageUrl || notionResult.pageId}`);
+
+                        // After uploading the files on Notion, delete the CVs, CLs, and all workflow files from /output
+                        if (process.env.CLEANUP_OUTPUT_AFTER_NOTION_SYNC !== 'false') {
+                            log('Deleting CVs, CLs, and workflow files in /output after successful Notion upload...');
+                            cleanedUpFiles = this.cleanupWorkflowFiles({
+                                cvPdfPath: cvPdfResult.outputPath,
+                                clPdfPath: clPdfResult.outputPath,
+                                cvFileName,
+                                clFileName,
+                            });
+                            log(`Cleaned up ${cleanedUpFiles.length} file(s) from output directory.`);
+                        }
+                    }
+                } catch (e) {
+                    log(`Notion sync warning: ${e.message}`);
+                }
+            } else {
+                log('Notion sync skipped: NOTION_API_KEY not configured in .env (run "node notion_sync.js --test" for setup instructions).');
+            }
+
             // Optional Telegram notification
             if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
-                await this.notifyTelegram(jobInfo, finalScore, cvPdfResult, clPdfResult).catch(e => log(`Telegram notify failed: ${e.message}`));
+                await this.notifyTelegram(jobInfo, finalScore, cvPdfResult, clPdfResult, notionResult, cleanedUpFiles).catch(e => log(`Telegram notify failed: ${e.message}`));
             }
 
             return {
@@ -2098,17 +2232,27 @@ Output ONLY the fixed CV in Markdown starting with "# MAGHAV AHUJA".`;
                 cvPdfPath: cvPdfResult.outputPath,
                 clPdfPath: clPdfResult.outputPath,
                 outputDir: this.outputDir,
+                notionResult,
+                cleanedUpFiles,
             };
         } finally {
             await browser.close().catch(() => {});
         }
     }
 
-    async notifyTelegram(jobInfo, score, cvRes, clRes) {
+    async notifyTelegram(jobInfo, score, cvRes, clRes, notionResult = null, cleanedUpFiles = []) {
         const token = process.env.TELEGRAM_BOT_TOKEN;
         const chatId = process.env.TELEGRAM_CHAT_ID;
         const atsLabel = score == null ? 'not checked' : `${score}% ${score >= 85 ? '✅' : '⚠️'}`;
-        const text = `✅ Job pipeline complete\n\n🔗 ${this.jobLink}\n🏢 ${jobInfo.companyName} — ${jobInfo.jobTitle}\n📊 ATS: ${atsLabel}\n📄 CV: ${cvRes.pages} pages\n✉️ CL: ${clRes.pages}\n📁 Output: ${this.outputDir}`;
+        let text = `✅ Job pipeline complete\n\n🔗 ${this.jobLink}\n🏢 ${jobInfo.companyName} — ${jobInfo.jobTitle}\n📊 ATS: ${atsLabel}\n📄 CV: ${cvRes.pages} pages\n✉️ CL: ${clRes.pages}`;
+        if (notionResult && notionResult.pageUrl) {
+            text += `\n📝 Notion: ${notionResult.pageUrl}`;
+        }
+        if (cleanedUpFiles && cleanedUpFiles.length > 0) {
+            text += `\n🧹 Output files uploaded to Notion & deleted from disk (${cleanedUpFiles.length} files cleaned)`;
+        } else {
+            text += `\n📁 Output: ${this.outputDir}`;
+        }
         const url = `https://api.telegram.org/bot${token}/sendMessage`;
         const resp = await fetch(url, {
             method: 'POST',
@@ -2135,6 +2279,9 @@ module.exports._internals = {
     resolveLLMConfig,
     validateProviderChain,
     callLLM,
+    extractCompanyViaLLM,
+    extractJobTitleViaLLM,
+    cleanupOutputFiles,
 };
 
 // CLI entry when run directly
@@ -2144,8 +2291,8 @@ if (require.main === module) {
     if (!link) {
         console.log('Usage: node job_application_pipeline.js <job_link> [llm_api_key] [llm_model]');
         console.log('  job_link: SEEK / LinkedIn / Indeed / TradeMe / any career URL');
-        console.log('  llm_api_key: optional override (else uses OpenClaw M_JOB_API_KEY / LLM_API_KEY env)');
-        console.log('  llm_model: optional override (else uses M_JOB_API_MODEL / gpt-oss-120b)');
+        console.log('  llm_api_key: optional override (else uses LLM_API_KEY / .env provider chain)');
+        console.log('  llm_model: optional override (else uses OPENROUTER_MODEL / GROQ_MODEL / NIM_MODEL)');
         process.exit(1);
     }
     const pipeline = new JobApplicationPipeline({

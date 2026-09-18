@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OpenClaw — Job Application Pipeline</title>
+<title>Job Application Pipeline</title>
 <style>
   :root { --bg:#0f172a; --card:#1e293b; --border:#334155; --accent:#38bdf8; --accent2:#0ea5e9; --text:#e2e8f0; --muted:#94a3b8; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444; }
   *{box-sizing:border-box}
@@ -44,7 +44,7 @@
 <div class="wrap">
   <div class="card">
     <h1>🚀 Job Application Pipeline</h1>
-    <p class="sub">Paste any job link (SEEK, LinkedIn, Indeed, TradeMe, etc.). OpenClaw will scrape the description, merge your CVs into <b>one</b> new ATS-optimised CV + cover letter, check the ATS score via the <b>ats.onl9.club API</b>, iterate if &lt; 85%, and produce a <b>2-page CV</b> + <b>1-page cover letter</b> PDF.</p>
+    <p class="sub">Paste any job link (SEEK, LinkedIn, Indeed, TradeMe, etc.). The pipeline will scrape the description, merge your CVs into <b>one</b> new ATS-optimised CV + cover letter, check the ATS score via the <b>ats.onl9.club API</b>, iterate if &lt; 85%, and produce a <b>2-page CV</b> + <b>1-page cover letter</b> PDF.</p>
 
     <div id="cvList" class="cv-list">Checking CVs…</div>
 
@@ -124,9 +124,22 @@ async function pollStatus(workflowId) {
   try {
     const r = await fetch('/api/pipeline-status/' + encodeURIComponent(workflowId));
     const j = await r.json();
-    if (j.status === 'completed' && j.outputFiles && j.outputFiles.length) {
-      showStatus(`✅ Pipeline complete! ATS: ${j.atsScore ?? '?'}% — ${j.outputFiles.length} file(s) in output/`, 'ok');
-      showLinks(j.outputFiles);
+    if (j.status === 'completed') {
+      let msg = `✅ Pipeline complete! ATS: ${j.atsScore ?? '?'}%`;
+      if (j.notionResult && j.notionResult.pageUrl) {
+        msg += ` — Synced to Notion: ${j.notionResult.pageUrl}`;
+      }
+      if (j.cleanedUpFiles && j.cleanedUpFiles.length > 0) {
+        msg += ` (Output files uploaded to Notion and cleaned from disk)`;
+      } else if (j.outputFiles && j.outputFiles.length) {
+        msg += ` — ${j.outputFiles.length} file(s) in output/`;
+        showLinks(j.outputFiles);
+      }
+      showStatus(msg, 'ok');
+      btn.disabled = false; btn.textContent = '🚀 Start Pipeline';
+      clearInterval(pollTimer);
+    } else if (j.status === 'failed') {
+      showStatus(`❌ Pipeline failed: ${j.error || 'Unknown error'}`, 'err');
       btn.disabled = false; btn.textContent = '🚀 Start Pipeline';
       clearInterval(pollTimer);
     }

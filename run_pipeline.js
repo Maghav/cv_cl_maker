@@ -4,7 +4,7 @@
  *
  * Usage:
  *   node run_pipeline.js <job_link> [llm_api_key] [llm_model] [llm_base_url]
- *   LLM_API_KEY / LLM_MODEL / LLM_BASE_URL / M_JOB_API_* env vars are also respected.
+ *   LLM_API_KEY / LLM_MODEL / LLM_BASE_URL env vars or .env provider chain are also respected.
  *
  * Example:
  *   node run_pipeline.js "https://www.seek.co.nz/job/123"
@@ -19,9 +19,9 @@ async function main() {
         console.log('Usage: node run_pipeline.js <job_link> [llm_api_key] [llm_model] [llm_base_url]');
         console.log('');
         console.log('  job_link:     SEEK / LinkedIn / Indeed / TradeMe / any career URL');
-        console.log('  llm_api_key:  optional override (else uses LLM_API_KEY / M_JOB_API_KEY env)');
-        console.log('  llm_model:    optional override (else uses LLM_MODEL / M_JOB_API_MODEL)');
-        console.log('  llm_base_url: optional override (else uses LLM_BASE_URL / M_JOB_API_BASE_URL)');
+        console.log('  llm_api_key:  optional override (else uses LLM_API_KEY / .env provider chain)');
+        console.log('  llm_model:    optional override (else uses LLM_MODEL / .env provider chain)');
+        console.log('  llm_base_url: optional override (else uses LLM_BASE_URL / .env provider chain)');
         console.log('');
         console.log('Examples:');
         console.log('  node run_pipeline.js "https://www.seek.co.nz/job/94121243"');

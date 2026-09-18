@@ -1,5 +1,5 @@
 /**
- * OpenClaw Job Pipeline — HTTP server + Telegram webhook
+ * Job Application Pipeline — HTTP server + Telegram webhook
  *
  * Serves the job_application_form.html UI and exposes:
  *  POST /api/start-pipeline  — start pipeline from form / API
@@ -7,7 +7,7 @@
  *  GET  /api/output-files, /api/cvs, /api/download/:file
  *  POST /api/telegram-webhook — receive job links from Telegram bot
  *
- * Paths are resolved relative to this file (D:\OpenClaw\workspace), NOT a nested workspace/.
+ * Paths are resolved relative to this file, NOT a nested workspace/.
  */
 
 const path = require('path');
@@ -104,11 +104,24 @@ function startPipeline(jobLink, llmOverrides = {}, extraEnv = {}) {
     child.on('close', code => {
         if (code === 0) {
             job.status = 'completed';
-            // Try to read ats_result.json for score
+            // Try to parse pipeline result JSON from stdout
             try {
-                const atsPath = path.join(OUTPUT_DIR, 'ats_result.json');
-                if (fs.existsSync(atsPath)) job.result = JSON.parse(fs.readFileSync(atsPath, 'utf8'));
+                const match = stdout.match(/\{[\s\S]*"success":\s*true[\s\S]*\}/);
+                if (match) {
+                    const parsed = JSON.parse(match[0]);
+                    job.result = parsed;
+                    if (parsed.atsScore != null) job.atsScore = parsed.atsScore;
+                    if (parsed.notionResult) job.notionResult = parsed.notionResult;
+                    if (parsed.cleanedUpFiles) job.cleanedUpFiles = parsed.cleanedUpFiles;
+                }
             } catch (_) {}
+            // Fallback: Try to read ats_result.json for score if not in stdout
+            if (!job.result || (job.result.atsScore == null && job.result.score == null)) {
+                try {
+                    const atsPath = path.join(OUTPUT_DIR, 'ats_result.json');
+                    if (fs.existsSync(atsPath)) job.result = JSON.parse(fs.readFileSync(atsPath, 'utf8'));
+                } catch (_) {}
+            }
             try {
                 job.outputFiles = fs.existsSync(OUTPUT_DIR) ? fs.readdirSync(OUTPUT_DIR) : [];
             } catch (_) {}
@@ -137,8 +150,16 @@ async function notifyTelegram(jobLink, result, workflowId) {
     const token = process.env.TELEGRAM_BOT_TOKEN;
     const chatId = process.env.TELEGRAM_CHAT_ID;
     if (!token || !chatId) return;
-    const score = result && result.score != null ? `${result.score}%` : '?';
-    const text = `✅ OpenClaw pipeline done\n\n🔗 ${jobLink}\n📊 ATS: ${score}\n🆔 ${workflowId}\n📁 Output ready at workspace/output/`;
+    const score = result && (result.atsScore != null ? result.atsScore : result.score != null ? result.score : '?');
+    let text = `✅ Pipeline done\n\n🔗 ${jobLink}\n📊 ATS: ${score}%\n🆔 ${workflowId}`;
+    if (result && result.notionResult && result.notionResult.pageUrl) {
+        text += `\n📝 Notion: ${result.notionResult.pageUrl}`;
+    }
+    if (result && result.cleanedUpFiles && result.cleanedUpFiles.length > 0) {
+        text += `\n🧹 Output files uploaded to Notion & deleted from disk (${result.cleanedUpFiles.length} cleaned)`;
+    } else {
+        text += `\n📁 Output ready at output/`;
+    }
     const resp = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true })
@@ -171,8 +192,10 @@ app.get('/api/pipeline-status/:workflowId', (req, res) => {
         try { const j = JSON.parse(fs.readFileSync(path.join(OUTPUT_DIR, 'ats_result.json'), 'utf8')); atsScore = j.score; } catch (_) {}
         return res.json({ workflowId: req.params.workflowId, status: files.length ? 'completed' : 'not_found', outputFiles: files, atsScore });
     }
-    let atsScore = job.result && job.result.score;
+    let atsScore = (job.result && (job.result.atsScore != null ? job.result.atsScore : job.result.score)) ?? job.atsScore;
     if (atsScore == null) { try { atsScore = JSON.parse(fs.readFileSync(path.join(OUTPUT_DIR, 'ats_result.json'), 'utf8')).score; } catch (_) {} }
+    const notionResult = job.notionResult || (job.result && job.result.notionResult) || null;
+    const cleanedUpFiles = job.cleanedUpFiles || (job.result && job.result.cleanedUpFiles) || [];
     res.json({
         workflowId: req.params.workflowId,
         status: job.status,
@@ -180,6 +203,8 @@ app.get('/api/pipeline-status/:workflowId', (req, res) => {
         startedAt: job.startedAt,
         error: job.error,
         atsScore,
+        notionResult,
+        cleanedUpFiles,
         outputFiles: job.outputFiles.length ? job.outputFiles : (fs.existsSync(OUTPUT_DIR) ? fs.readdirSync(OUTPUT_DIR).filter(f => !f.startsWith('.')) : []),
         logTail: (job.log || '').slice(-3000),
     });
@@ -219,7 +244,7 @@ app.get('/api/download/:filename', (req, res) => {
 
 // ---------------------------------------------------------------------------
 // Telegram webhook — connect your bot via @BotFather setWebhook to this URL
-// POST https://your-host/api/telegram-webhook  (or via OpenClaw's Telegram integration)
+// POST https://your-host/api/telegram-webhook
 // Accepts any message containing a URL → starts pipeline
 // ---------------------------------------------------------------------------
 function extractUrl(text) {
@@ -296,7 +321,7 @@ app.get('/api/telegram-trigger', (req, res) => {
 
 // ---------------------------------------------------------------------------
 app.listen(PORT, () => {
-    console.log(`OpenClaw Job Pipeline server on http://localhost:${PORT}`);
+    console.log(`Job Application Pipeline server on http://localhost:${PORT}`);
     console.log(`  Form:     http://localhost:${PORT}/`);
     console.log(`  Health:   http://localhost:${PORT}/health`);
     console.log(`  Webhook:  POST http://localhost:${PORT}/api/telegram-webhook`);
