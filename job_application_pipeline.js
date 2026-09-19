@@ -678,7 +678,15 @@ function cleanAndValidateJobDescription(rawDescription, jobLink, pageTitle = '')
 function getBrowserLaunchOptions() {
     const opts = {
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-extensions'
+        ]
     };
     if (process.env.PUPPETEER_EXECUTABLE_PATH) {
         opts.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
@@ -1619,8 +1627,12 @@ function coverLetterHtmlDocument(markdown, layout) {
 }
 
 async function generatePdfWithPageCheck(markdown, outputPath, targetPages, htmlConverter, browserInstance) {
-    const shouldClose = !browserInstance;
-    const browser = browserInstance || await puppeteer.launch(getBrowserLaunchOptions());
+    let browser = browserInstance;
+    let shouldClose = false;
+    if (!browser || (typeof browser.isConnected === 'function' && !browser.isConnected())) {
+        browser = await puppeteer.launch(getBrowserLaunchOptions());
+        shouldClose = true;
+    }
     try {
         const isCV = targetPages === 2;
         const layouts = isCV ? CV_LAYOUTS : CL_LAYOUTS;
@@ -1630,47 +1642,51 @@ async function generatePdfWithPageCheck(markdown, outputPath, targetPages, htmlC
         const mmToPx = (mm) => mm / 25.4 * 96;
         async function renderAndCount(htmlContent, layout) {
             const page = await browser.newPage();
-            await page.emulateMediaType('print');
-            const printable = {
-                w: mmToPx(210 - (layout.marginX * 2)),
-                h: mmToPx(297 - (layout.marginY * 2))
-            };
-            await page.setViewport({ width: Math.max(720, Math.ceil(printable.w)), height: 1000, deviceScaleFactor: 1 });
-            await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
-            const contentHeight = await page.evaluate((w) => {
-                document.body.style.width = w + 'px';
-                const bodyTop = document.body.getBoundingClientRect().top;
-                const bottoms = Array.from(document.body.querySelectorAll('*')).map(el => el.getBoundingClientRect().bottom);
-                return Math.ceil(Math.max(bodyTop, ...bottoms) - bodyTop);
-            }, printable.w);
-            const pdfBuffer = await page.pdf({
-                format: 'A4',
-                printBackground: true,
-                margin: {
-                    top: `${layout.marginY}mm`, right: `${layout.marginX}mm`,
-                    bottom: `${layout.marginY}mm`, left: `${layout.marginX}mm`
-                }
-            });
-            let pages = 0;
             try {
-                if (pdfParse) {
-                    const data = await pdfParse(pdfBuffer);
-                    pages = data.numpages || 0;
-                }
-            } catch (_) {}
-            if (!pages) {
-                // Fallback: regex on PDF string (for uncompressed PDFs)
+                await page.emulateMediaType('print');
+                const printable = {
+                    w: mmToPx(210 - (layout.marginX * 2)),
+                    h: mmToPx(297 - (layout.marginY * 2))
+                };
+                await page.setViewport({ width: Math.max(720, Math.ceil(printable.w)), height: 1000, deviceScaleFactor: 1 });
+                await page.setContent(htmlContent, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                await page.evaluateHandle('document.fonts.ready').catch(() => {});
+                const contentHeight = await page.evaluate((w) => {
+                    document.body.style.width = w + 'px';
+                    const bodyTop = document.body.getBoundingClientRect().top;
+                    const bottoms = Array.from(document.body.querySelectorAll('*')).map(el => el.getBoundingClientRect().bottom);
+                    return Math.ceil(Math.max(bodyTop, ...bottoms) - bodyTop);
+                }, printable.w);
+                const pdfBuffer = await page.pdf({
+                    format: 'A4',
+                    printBackground: true,
+                    margin: {
+                        top: `${layout.marginY}mm`, right: `${layout.marginX}mm`,
+                        bottom: `${layout.marginY}mm`, left: `${layout.marginX}mm`
+                    }
+                });
+                let pages = 0;
                 try {
-                    const pdfStr = pdfBuffer.toString('latin1');
-                    const total = (pdfStr.match(/\/Type\s*\/Page/g) || []).length;
-                    const root = (pdfStr.match(/\/Type\s*\/Pages/g) || []).length;
-                    pages = total - root;
-                    if (!pages || pages < 0) pages = total || 0;
+                    if (pdfParse) {
+                        const data = await pdfParse(pdfBuffer);
+                        pages = data.numpages || 0;
+                    }
                 } catch (_) {}
+                if (!pages) {
+                    // Fallback: regex on PDF string (for uncompressed PDFs)
+                    try {
+                        const pdfStr = pdfBuffer.toString('latin1');
+                        const total = (pdfStr.match(/\/Type\s*\/Page/g) || []).length;
+                        const root = (pdfStr.match(/\/Type\s*\/Pages/g) || []).length;
+                        pages = total - root;
+                        if (!pages || pages < 0) pages = total || 0;
+                    } catch (_) {}
+                }
+                if (!pages) pages = Math.max(1, Math.ceil(contentHeight / printable.h));
+                return { pdfBuffer, pages, contentHeight, printableHeight: printable.h, layout };
+            } finally {
+                await page.close().catch(() => {});
             }
-            if (!pages) pages = Math.max(1, Math.ceil(contentHeight / printable.h));
-            await page.close();
-            return { pdfBuffer, pages, contentHeight, printableHeight: printable.h, layout };
         }
 
         const candidates = [];
@@ -1824,12 +1840,14 @@ class JobApplicationPipeline {
         ensureDir(this.outputDir);
         ensureDir(this.myCvsDir);
 
-        // Shared browser for scraping + PDF (reuse to save time)
-        const browser = await puppeteer.launch(getBrowserLaunchOptions());
+        // Browser for scraping (closed immediately after scraping to keep memory low during LLM calls)
+        let browser = await puppeteer.launch(getBrowserLaunchOptions());
 
         try {
             // Step 1: Scrape job description
             const jobInfo = await scrapeJobDescription(this.jobLink, browser);
+            await browser.close().catch(() => {});
+            browser = null;
             const jobDescription = jobInfo.description;
             if (!jobDescription || jobDescription.length < 100) throw new Error('Failed to scrape job description (too short or empty)');
             fs.writeFileSync(path.join(this.outputDir, 'job_description.txt'), jobDescription);
@@ -2284,7 +2302,7 @@ Output ONLY the fixed CV in Markdown starting with "# MAGHAV AHUJA".`;
                 cleanedUpFiles,
             };
         } finally {
-            await browser.close().catch(() => {});
+            if (browser) await browser.close().catch(() => {});
         }
     }
 }
@@ -2307,6 +2325,8 @@ module.exports._internals = {
     extractCompanyViaLLM,
     extractJobTitleViaLLM,
     cleanupOutputFiles,
+    generatePdfWithPageCheck,
+    getBrowserLaunchOptions,
 };
 
 // CLI entry when run directly
