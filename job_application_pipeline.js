@@ -694,10 +694,61 @@ async function scrapeJobDescription(jobLink, browserInstance) {
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
     await page.setViewport({ width: 1366, height: 900 });
 
+    // Block images, media, fonts, and tracking beacons to dramatically accelerate page load
+    // and avoid hanging on infinite analytics/ad connections on cloud hosts
     try {
-        await page.goto(jobLink, { waitUntil: 'networkidle2', timeout: 30000 });
-        // Extra wait for dynamic content
-        await new Promise(r => setTimeout(r, 2500));
+        await page.setRequestInterception(true);
+        page.on('request', (req) => {
+            const rt = req.resourceType();
+            const u = req.url().toLowerCase();
+            if (
+                ['image', 'media', 'font'].includes(rt) ||
+                u.includes('google-analytics.com') ||
+                u.includes('doubleclick.net') ||
+                u.includes('facebook.net') ||
+                u.includes('hotjar.com') ||
+                u.includes('segment.io') ||
+                u.includes('clarity.ms') ||
+                u.includes('datadoghq.com')
+            ) {
+                req.abort().catch(() => {});
+            } else {
+                req.continue().catch(() => {});
+            }
+        });
+    } catch (_) {}
+
+    const timeoutMs = parseInt(process.env.SCRAPE_TIMEOUT_MS || '60000', 10);
+
+    try {
+        let navOk = false;
+        try {
+            await page.goto(jobLink, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+            navOk = true;
+        } catch (navErr) {
+            log(`Navigation warning (domcontentloaded): ${navErr.message}. Checking page DOM...`);
+            // Check if DOM already received HTML content despite timeout event
+            const bodyLen = await page.evaluate(() => (document.body ? document.body.innerText.trim().length : 0)).catch(() => 0);
+            if (bodyLen > 200) {
+                log(`Page content found in DOM (${bodyLen} chars) despite navigation warning.`);
+                navOk = true;
+            } else {
+                try {
+                    await page.goto(jobLink, { waitUntil: 'load', timeout: timeoutMs });
+                    navOk = true;
+                } catch (loadErr) {
+                    const finalCheck = await page.evaluate(() => (document.body ? document.body.innerText.trim().length : 0)).catch(() => 0);
+                    if (finalCheck > 200) {
+                        navOk = true;
+                    } else {
+                        throw new Error(`Failed to load job page (${jobLink}): ${loadErr.message}`);
+                    }
+                }
+            }
+        }
+
+        // Wait for dynamic SPA / client-side rendering
+        await new Promise(r => setTimeout(r, 3000));
 
         // Try to dismiss common popups/cookie banners
         try {
