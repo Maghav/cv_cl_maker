@@ -15,8 +15,8 @@ output/
 tmp/
 *.log
 
-# Personal candidate source CVs (store locally in my_cvs/)
-my_cvs/*.pdf
+# Candidate source CVs
+!my_cvs/*.pdf
 
 # OS & Editor files
 .DS_Store
