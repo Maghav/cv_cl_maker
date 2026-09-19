@@ -1,11 +1,10 @@
 /**
- * Job Application Pipeline — HTTP server + Telegram webhook
+ * Job Application Pipeline — HTTP server
  *
  * Serves the job_application_form.html UI and exposes:
  *  POST /api/start-pipeline  — start pipeline from form / API
  *  GET  /api/pipeline-status/:id — poll status
  *  GET  /api/output-files, /api/cvs, /api/download/:file
- *  POST /api/telegram-webhook — receive job links from Telegram bot
  *
  * Paths are resolved relative to this file, NOT a nested workspace/.
  */
@@ -64,7 +63,7 @@ app.get('/', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Pipeline starter (shared by form + telegram + direct API)
+// Pipeline starter (shared by form + direct API)
 // ---------------------------------------------------------------------------
 function startPipeline(jobLink, llmOverrides = {}, extraEnv = {}) {
     const workflowId = `wf_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -126,10 +125,6 @@ function startPipeline(jobLink, llmOverrides = {}, extraEnv = {}) {
                 job.outputFiles = fs.existsSync(OUTPUT_DIR) ? fs.readdirSync(OUTPUT_DIR) : [];
             } catch (_) {}
             console.log(`[server] Pipeline ${workflowId} completed`);
-            // Telegram notify if configured (pipeline also notifies, this is backup)
-            if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
-                notifyTelegram(jobLink, job.result, workflowId).catch(e => console.warn('[server] telegram backup notify failed', e.message));
-            }
         } else {
             job.status = 'failed';
             job.error = stderr.slice(-2000) || `Pipeline exited with code ${code}`;
@@ -144,27 +139,6 @@ function startPipeline(jobLink, llmOverrides = {}, extraEnv = {}) {
     });
 
     return { workflowId, error: null };
-}
-
-async function notifyTelegram(jobLink, result, workflowId) {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    const chatId = process.env.TELEGRAM_CHAT_ID;
-    if (!token || !chatId) return;
-    const score = result && (result.atsScore != null ? result.atsScore : result.score != null ? result.score : '?');
-    let text = `✅ Pipeline done\n\n🔗 ${jobLink}\n📊 ATS: ${score}%\n🆔 ${workflowId}`;
-    if (result && result.notionResult && result.notionResult.pageUrl) {
-        text += `\n📝 Notion: ${result.notionResult.pageUrl}`;
-    }
-    if (result && result.cleanedUpFiles && result.cleanedUpFiles.length > 0) {
-        text += `\n🧹 Output files uploaded to Notion & deleted from disk (${result.cleanedUpFiles.length} cleaned)`;
-    } else {
-        text += `\n📁 Output ready at output/`;
-    }
-    const resp = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true })
-    });
-    if (!resp.ok) throw new Error(await resp.text());
 }
 
 // ---------------------------------------------------------------------------
@@ -243,88 +217,10 @@ app.get('/api/download/:filename', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Telegram webhook — connect your bot via @BotFather setWebhook to this URL
-// POST https://your-host/api/telegram-webhook
-// Accepts any message containing a URL → starts pipeline
-// ---------------------------------------------------------------------------
-function extractUrl(text) {
-    if (!text || typeof text !== 'string') return null;
-    const m = text.match(/https?:\/\/[^\s]+/i);
-    return m ? m[0].replace(/[)\].,;!?]+$/, '') : null;
-}
-
-app.post('/api/telegram-webhook', async (req, res) => {
-    // Always ack Telegram quickly
-    res.json({ ok: true });
-
-    try {
-        const body = req.body;
-        const msg = body.message || body.edited_message || body.channel_post;
-        if (!msg || !msg.text) return;
-        const chatId = String(msg.chat.id);
-        const text = msg.text;
-        const url = extractUrl(text);
-        if (!url) {
-            // No URL — send help message
-            if (process.env.TELEGRAM_BOT_TOKEN) {
-                await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ chat_id: chatId, text: 'Send me a job link (SEEK, LinkedIn, Indeed, TradeMe, or any career site) and I will generate an ATS-optimised 2-page CV + 1-page cover letter for you.' })
-                }).catch(() => {});
-            }
-            return;
-        }
-
-        // Optional: restrict to owner chat if TELEGRAM_CHAT_ID is set and strict mode enabled
-        // For now allow any chat that knows the webhook URL; owner can set TELEGRAM_ALLOWED_CHAT_IDS
-        const allowed = process.env.TELEGRAM_ALLOWED_CHAT_IDS;
-        if (allowed && !allowed.split(',').map(s => s.trim()).includes(chatId)) {
-            console.log(`[telegram] Ignoring message from non-allowed chat ${chatId}`);
-            return;
-        }
-
-        // Persist chat id for notifications if not set
-        if (!process.env.TELEGRAM_CHAT_ID) process.env.TELEGRAM_CHAT_ID = chatId;
-
-        // Acknowledge
-        if (process.env.TELEGRAM_BOT_TOKEN) {
-            await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: chatId, text: `🔗 Got it: ${url}\n⏳ Starting pipeline… I'll notify you when the CV + cover letter are ready (2-5 min).`, disable_web_page_preview: true })
-            }).catch(() => {});
-        }
-
-        const { workflowId, error } = startPipeline(url, {}, { TELEGRAM_CHAT_ID: chatId });
-        if (error) {
-            if (process.env.TELEGRAM_BOT_TOKEN) {
-                await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ chat_id: chatId, text: `❌ Could not start pipeline: ${error}` })
-                }).catch(() => {});
-            }
-        } else {
-            console.log(`[telegram] Started pipeline ${workflowId} for ${url} (chat ${chatId})`);
-        }
-    } catch (e) {
-        console.error('[telegram-webhook] error', e);
-    }
-});
-
-// Also support GET-style Telegram trigger for manual testing: /api/telegram-trigger?url=...
-app.get('/api/telegram-trigger', (req, res) => {
-    const url = req.query.url;
-    if (!url) return res.status(400).json({ error: 'Provide ?url=https://...' });
-    const { workflowId, error } = startPipeline(url, {});
-    if (error) return res.status(400).json({ error });
-    res.json({ success: true, workflowId, jobLink: url });
-});
-
-// ---------------------------------------------------------------------------
 app.listen(PORT, () => {
     console.log(`Job Application Pipeline server on http://localhost:${PORT}`);
     console.log(`  Form:     http://localhost:${PORT}/`);
     console.log(`  Health:   http://localhost:${PORT}/health`);
-    console.log(`  Webhook:  POST http://localhost:${PORT}/api/telegram-webhook`);
     console.log(`  Workspace: ${WORKSPACE_ROOT}`);
     console.log(`  CVs:       ${MY_CVS_DIR}`);
     console.log(`  Output:    ${OUTPUT_DIR}`);

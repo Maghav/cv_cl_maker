@@ -9,7 +9,7 @@
  *  4. Build a complete, factual CV + cover letter from candidate_profile.json
  *  5. Check ATS score via the ats.onl9.club API (reporting only; never rewrite facts)
  *  6. Generate PDFs with deterministic layout fitting (CV exactly 2 pages, CL exactly 1 page)
- *  7. Save to output/ + optional Notion sync & Telegram notification
+ *  7. Save to output/ + optional Notion sync & cleanup
  *
  * LLM: multi-provider fallback (OpenRouter, Groq, NVIDIA NIM, OpenAI, or LLM_API_KEY).
  * ATS check: ats.onl9.club API (ATS_API_BASE_URL) — no browser automation needed.
@@ -675,13 +675,21 @@ function cleanAndValidateJobDescription(rawDescription, jobLink, pageTitle = '')
     return cleaned.substring(0, 15000);
 }
 
+function getBrowserLaunchOptions() {
+    const opts = {
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    };
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        opts.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    }
+    return opts;
+}
+
 async function scrapeJobDescription(jobLink, browserInstance) {
     log(`Scraping job description: ${jobLink} [${detectPlatform(jobLink)}]`);
     const shouldClose = !browserInstance;
-    const browser = browserInstance || await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-    });
+    const browser = browserInstance || await puppeteer.launch(getBrowserLaunchOptions());
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
     await page.setViewport({ width: 1366, height: 900 });
@@ -1561,10 +1569,7 @@ function coverLetterHtmlDocument(markdown, layout) {
 
 async function generatePdfWithPageCheck(markdown, outputPath, targetPages, htmlConverter, browserInstance) {
     const shouldClose = !browserInstance;
-    const browser = browserInstance || await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-    });
+    const browser = browserInstance || await puppeteer.launch(getBrowserLaunchOptions());
     try {
         const isCV = targetPages === 2;
         const layouts = isCV ? CV_LAYOUTS : CL_LAYOUTS;
@@ -1769,10 +1774,7 @@ class JobApplicationPipeline {
         ensureDir(this.myCvsDir);
 
         // Shared browser for scraping + PDF (reuse to save time)
-        const browser = await puppeteer.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-        });
+        const browser = await puppeteer.launch(getBrowserLaunchOptions());
 
         try {
             // Step 1: Scrape job description
@@ -2217,11 +2219,6 @@ Output ONLY the fixed CV in Markdown starting with "# MAGHAV AHUJA".`;
                 log('Notion sync skipped: NOTION_API_KEY not configured in .env (run "node notion_sync.js --test" for setup instructions).');
             }
 
-            // Optional Telegram notification
-            if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
-                await this.notifyTelegram(jobInfo, finalScore, cvPdfResult, clPdfResult, notionResult, cleanedUpFiles).catch(e => log(`Telegram notify failed: ${e.message}`));
-            }
-
             return {
                 success: true,
                 workflowId: this.workflowId,
@@ -2238,29 +2235,6 @@ Output ONLY the fixed CV in Markdown starting with "# MAGHAV AHUJA".`;
         } finally {
             await browser.close().catch(() => {});
         }
-    }
-
-    async notifyTelegram(jobInfo, score, cvRes, clRes, notionResult = null, cleanedUpFiles = []) {
-        const token = process.env.TELEGRAM_BOT_TOKEN;
-        const chatId = process.env.TELEGRAM_CHAT_ID;
-        const atsLabel = score == null ? 'not checked' : `${score}% ${score >= 85 ? '✅' : '⚠️'}`;
-        let text = `✅ Job pipeline complete\n\n🔗 ${this.jobLink}\n🏢 ${jobInfo.companyName} — ${jobInfo.jobTitle}\n📊 ATS: ${atsLabel}\n📄 CV: ${cvRes.pages} pages\n✉️ CL: ${clRes.pages}`;
-        if (notionResult && notionResult.pageUrl) {
-            text += `\n📝 Notion: ${notionResult.pageUrl}`;
-        }
-        if (cleanedUpFiles && cleanedUpFiles.length > 0) {
-            text += `\n🧹 Output files uploaded to Notion & deleted from disk (${cleanedUpFiles.length} files cleaned)`;
-        } else {
-            text += `\n📁 Output: ${this.outputDir}`;
-        }
-        const url = `https://api.telegram.org/bot${token}/sendMessage`;
-        const resp = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
-        });
-        if (!resp.ok) throw new Error(`Telegram API ${resp.status}: ${await resp.text()}`);
-        log('Telegram notification sent');
     }
 }
 

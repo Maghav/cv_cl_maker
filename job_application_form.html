@@ -77,7 +77,7 @@
 
     <div id="status" class="status"></div>
     <div id="links" class="links" style="display:none"></div>
-    <p class="small">CVs source: <code>workspace/my_cvs/*.pdf</code> &nbsp;|&nbsp; Output: <code>workspace/output/</code> &nbsp;|&nbsp; Also trigger via Telegram — send the job link to your bot.</p>
+    <p class="small">CVs source: <code>my_cvs/*.pdf</code> &nbsp;|&nbsp; Notion: automatic sync & cleanup</p>
   </div>
 </div>
 
@@ -115,7 +115,7 @@ async function loadCvs() {
 }
 loadCvs();
 
-// Also handle ?job= prefill (for Telegram handoff or bookmarklet)
+// Also handle ?job= prefill (for bookmarklet or direct URL link)
 const qp = new URLSearchParams(location.search);
 if (qp.get('job')) document.getElementById('jobLink').value = qp.get('job');
 

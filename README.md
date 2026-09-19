@@ -5,14 +5,14 @@ Paste a job link → get an ATS-optimised 2-page CV + 1-page cover letter, autom
 > **Note on OpenClaw:** OpenClaw is **not** present or required. This pipeline is completely standalone, running directly on Node.js with standard API keys.
 
 **Workflow:**
-1. Accept job link from any site (SEEK, LinkedIn, Indeed, TradeMe, or generic) via web form or Telegram bot
+1. Accept job link from any site (SEEK, LinkedIn, Indeed, TradeMe, or generic) via web form or CLI
 2. Scrape job description via Puppeteer (handles JS-heavy pages)
 3. Extract text from **all** PDFs in `my_cvs/` and **merge into ONE new CV** (uses candidate profile for factual integrity)
 4. LLM generates a new ATS-friendly CV + cover letter tailored to the JD (multi-provider fallback: OpenRouter, Groq, NVIDIA NIM, OpenAI)
 5. Check ATS score via the **ats.onl9.club API** (POSTs CV text + JD to `/api/v1/analyze`, reads score + keyword gaps)
 6. If score < 85 → LLM improves CV using the keyword report → re-check (up to 3 iterations, keeps best)
 7. Generate PDFs with enforced page limits: **CV = 2 FULL pages** (content fill measured, ≥92% of both pages), **Cover letter = 1 page** (verified via `pdf-parse`)
-8. Save to `output/` + **automatic Notion sync** (uploads CV & Cover Letter PDFs to your Notion database) + optional Telegram notification
+8. Save to `output/` + **automatic Notion sync** (uploads CV & Cover Letter PDFs to your Notion database) + automatic cleanup
 
 ## Files
 
@@ -21,7 +21,7 @@ Paste a job link → get an ATS-optimised 2-page CV + 1-page cover letter, autom
 | `job_application_form.html` | Web form — paste link, optionally override LLM key/model |
 | `job_application_pipeline.js` | Core pipeline orchestrator |
 | `notion_sync.js` | Notion API integration — uploads PDFs and logs applications |
-| `server.js` | HTTP server + Telegram webhook |
+| `server.js` | HTTP server with web form UI and REST status polling |
 | `run_pipeline.js` | CLI entry point |
 | `candidate_profile.json` | Curated source-of-truth career history & skills |
 | `my_cvs/*.pdf` | Source CVs |
@@ -142,21 +142,6 @@ node run_pipeline.js "https://www.seek.co.nz/job/94121243"
 # With explicit key/model override:
 node run_pipeline.js "https://www.seek.co.nz/job/94121243" "gsk_..." "openai/gpt-oss-120b"
 ```
-
-### Telegram (Optional)
-
-The server exposes `POST /api/telegram-webhook` for Telegram's `setWebhook`:
-
-```bash
-curl -X POST https://api.telegram.org/bot<TOKEN>/setWebhook \
-  -d url=https://your-host/api/telegram-webhook
-```
-
-- `TELEGRAM_BOT_TOKEN` must be set
-- If `TELEGRAM_CHAT_ID` is set, notifications go there; otherwise the chat that sent the URL is used
-- Optional allowlist: `TELEGRAM_ALLOWED_CHAT_IDS=123,456`
-
-Manual trigger (testing): `GET /api/telegram-trigger?url=https://...`
 
 ## Output
 
