@@ -1303,12 +1303,77 @@ function extractKeywordHint(jd) {
     return analysis.keywords.slice(0, 15).join(', ') || 'role-specific keywords from JD';
 }
 
+function resolveAtsApiUrl(rawUrl) {
+    let url = (rawUrl || 'https://ats-api.onl9.club/api/v1').trim().replace(/\/+$/, '');
+    if (url.includes('://ats.onl9.club')) {
+        url = url.replace('://ats.onl9.club', '://ats-api.onl9.club');
+    }
+    if (!url.includes('/api/v1')) {
+        url = `${url}/api/v1`;
+    }
+    return url;
+}
+
+function calculateLocalAtsScore(cvText, jobDescription, meta = {}) {
+    const analysis = extractJdRequirementsAndKeywords(jobDescription);
+    const cvLower = String(cvText || '').toLowerCase();
+
+    // Keyword match
+    const keywords = analysis.keywords || [];
+    const matchedKeywords = [];
+    const missingKeywords = [];
+    for (const kw of keywords) {
+        if (cvLower.includes(kw.toLowerCase())) {
+            matchedKeywords.push(kw);
+        } else {
+            missingKeywords.push({ keyword: kw, importance: 'Important', action_suggestion: `Incorporate experience with ${kw} if applicable` });
+        }
+    }
+    const keywordRatio = keywords.length > 0 ? (matchedKeywords.length / keywords.length) : 0.8;
+    const keywordScore = Math.round(keywordRatio * 100);
+
+    // Formatting & Sections (all 7 required sections)
+    const requiredSections = [
+        'PROFESSIONAL SUMMARY', 'TECHNICAL SKILLS', 'PROFESSIONAL EXPERIENCE',
+        'KEY PROJECTS', 'VOLUNTEER EXPERIENCE', 'EDUCATION', 'ADDITIONAL INFORMATION'
+    ];
+    const presentSections = requiredSections.filter(s => cvText.includes(`## ${s}`));
+    const sectionScore = Math.round((presentSections.length / requiredSections.length) * 100);
+
+    // Title match
+    let titleScore = 75;
+    if (meta.jobTitle && cvLower.includes(meta.jobTitle.toLowerCase())) {
+        titleScore = 100;
+    }
+
+    const overallScore = Math.min(96, Math.max(55, Math.round((keywordScore * 0.45) + (sectionScore * 0.35) + (titleScore * 0.20))));
+    const passed = overallScore >= 85;
+
+    const reportLines = [
+        `ATS Score: ${overallScore}% (Local Keyword Analysis)`
+    ];
+    if (matchedKeywords.length) reportLines.push(`\n## Matched keywords: ${matchedKeywords.join(', ')}`);
+    if (missingKeywords.length) reportLines.push(`\n## Missing keywords:\n${missingKeywords.map(m => `- ${m.keyword} (${m.importance}): ${m.action_suggestion}`).join('\n')}`);
+
+    return {
+        score: overallScore,
+        passed,
+        needsImprovement: !passed,
+        keywordReport: reportLines.join('\n'),
+        missingKeywords,
+        weakKeywords: [],
+        formattingIssues: [],
+        recommendations: [],
+        isFallback: true
+    };
+}
+
 // ---------------------------------------------------------------------------
 // ATS score via ats.onl9.club API — POST CV + JD, get score + keyword report
 // ---------------------------------------------------------------------------
 async function checkAtsScoreViaApi(cvText, jobDescription, meta = {}) {
     log('Checking ATS score via ats.onl9.club API...');
-    const baseUrl = (process.env.ATS_API_BASE_URL || 'https://ats-api.onl9.club/api/v1').replace(/\/+$/, '');
+    const baseUrl = resolveAtsApiUrl(process.env.ATS_API_BASE_URL);
     const headers = { 'Content-Type': 'application/json' };
     // Anonymous calls are accepted today; ATS_API_TOKEN covers the case where auth is enforced later.
     if (process.env.ATS_API_TOKEN) headers['Authorization'] = `Bearer ${process.env.ATS_API_TOKEN}`;
@@ -1408,18 +1473,10 @@ async function checkAtsScoreViaApi(cvText, jobDescription, meta = {}) {
             if (attempt < 2) await new Promise(r => setTimeout(r, 3000));
         }
     }
-    log(`ATS API check failed: ${lastErr ? lastErr.message : 'unknown error'}`);
-    return {
-        score: 0,
-        passed: false,
-        needsImprovement: true,
-        error: lastErr ? lastErr.message : 'unknown error',
-        keywordReport: `Error checking ATS API: ${lastErr ? lastErr.message : 'unknown error'}`,
-        missingKeywords: [],
-        weakKeywords: [],
-        formattingIssues: [],
-        recommendations: []
-    };
+    log(`ATS API check failed: ${lastErr ? lastErr.message : 'unknown error'} — using local keyword analysis fallback`);
+    const fallback = calculateLocalAtsScore(cvText, jobDescription, meta);
+    fallback.error = lastErr ? lastErr.message : 'unknown error';
+    return fallback;
 }
 
 async function improveCVWithReport({ cvMarkdown, keywordReport, jobDescription, jobLink, companyName, jobTitle, llmConfig, llmChain, score, missingKeywords, weakKeywords, formattingIssues, iteration = 1 }) {
@@ -2327,6 +2384,8 @@ module.exports._internals = {
     cleanupOutputFiles,
     generatePdfWithPageCheck,
     getBrowserLaunchOptions,
+    resolveAtsApiUrl,
+    calculateLocalAtsScore,
 };
 
 // CLI entry when run directly
