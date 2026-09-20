@@ -34,6 +34,13 @@ try {
 const express = require('express');
 const cors = require('cors');
 
+process.on('uncaughtException', err => {
+    console.error('[server] Uncaught exception:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[server] Unhandled rejection at:', promise, 'reason:', reason);
+});
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
