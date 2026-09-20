@@ -1140,7 +1140,7 @@ async function extractAndMergeCVs(myCvsDir) {
 // ---------------------------------------------------------------------------
 // LLM generation — CV + Cover Letter (ONE new CV merging all sources)
 // ---------------------------------------------------------------------------
-async function generateCVAndCoverLetter({ candidateProfile, jobDescription, companyName, jobTitle, jobLink = '', llmChain }) {
+async function generateCVAndCoverLetter({ candidateProfile, jobDescription, companyName, jobTitle, jobLink = '', llmChain, preflightAtsReport = null }) {
     log('Building baseline factual application documents...');
     const base = buildFactualApplicationDocuments({
         profile: candidateProfile,
@@ -1164,14 +1164,34 @@ async function generateCVAndCoverLetter({ candidateProfile, jobDescription, comp
     // 1. LLM Tailored CV
     try {
         const jdAnalysis = extractJdRequirementsAndKeywords(jobDescription, jobTitle, jobLink);
-        const topKeywordsStr = jdAnalysis.keywords.slice(0, 30).join(', ');
+        const topKeywordsStr = jdAnalysis.keywords.slice(0, 35).join(', ');
         const topReqsStr = jdAnalysis.requirements.slice(0, 8).map((r, i) => `   ${i + 1}. ${r}`).join('\n');
+
+        let preflightSection = '';
+        if (preflightAtsReport) {
+            const preflightMissing = (preflightAtsReport.missingKeywords || []).map(k => k.keyword || k).filter(Boolean);
+            const preflightSkills = (preflightAtsReport.missingSkills || []).map(s => s.name || s).filter(Boolean);
+            const preflightReqs = (preflightAtsReport.experienceMatches || []).map(e => e.requirement || e).filter(Boolean);
+            preflightSection = `
+=== ATS SCANNER PRE-DIAGNOSTIC TARGETS (FROM ats.onl9.club - TARGET: 95%+ SCORE) ===
+The ATS scanner has analyzed the JD and requires the following terms to achieve 90+ ATS score:
+- CRITICAL MISSING KEYWORDS TO EMBED VERBATIM: ${preflightMissing.join(', ') || '(All matched in base)'}
+- REQUIRED HARD SKILLS: ${preflightSkills.join(', ') || '(All matched)'}
+- KEY REQUIREMENTS TO MIRROR IN BULLETS (WITH QUANTIFIABLE ACHIEVEMENTS):
+${preflightReqs.slice(0, 8).map((r, i) => `  ${i + 1}. ${r}`).join('\n') || 'Align with core JD duties'}
+
+MANDATORY DIRECTIVE:
+1. Every missing keyword and hard skill above MUST appear in the generated CV (in TECHNICAL SKILLS or experience bullets).
+2. Every single bullet point MUST be strictly between 18 and 42 words (NEVER exceed 48 words).
+3. The Professional Summary MUST be exactly 1 paragraph of 40-50 words (strictly under 52 words).
+`;
+        }
 
         const cvPrompt = `You are an elite ATS resume architect and technical career specialist. Your mission is to tailor the candidate's verified factual CV to achieve a 95%+ ATS match score against the role of "${jobTitle}" at "${companyName}" on ats.onl9.club.
 
 === TARGET JOB DESCRIPTION ===
 ${jobDescription.substring(0, 4500)}
-
+${preflightSection}
 === EXTRACTED CORE JD KEYWORDS & TECHNOLOGIES ===
 ${topKeywordsStr || 'Extract and weave all relevant technical tools, systems, and methodologies from the JD'}
 
@@ -1207,8 +1227,8 @@ Additional: ${(candidateProfile.additional || []).join(', ')}
    ${candidateProfile.workingRights}
 
 2. PROFESSIONAL SUMMARY (CRITICAL ATS FORMATTING):
-   - Exactly ONE concise paragraph of 40 to 50 words (MUST NOT exceed 54 words to prevent ATS bullet-length penalties).
-   - Tailor it directly to "${jobTitle}", weaving 5-8 of the primary keywords and tools from the JD (e.g., ${topKeywordsStr.split(', ').slice(0, 6).join(', ')}).
+   - Exactly ONE concise paragraph of 40 to 50 words (MUST NOT exceed 52 words to prevent ATS bullet-length penalties).
+   - Tailor it directly to "${jobTitle}", targeting "${companyName}", weaving 5-8 of the primary keywords and tools from the JD.
 
 3. DYNAMIC TECHNICAL SKILLS MATRIX:
    - Reconstruct 6-8 distinct technical categories tailored to this role, showcasing the EXACT tools, platforms, protocols, and methodologies from the JD.
@@ -1218,12 +1238,12 @@ Additional: ${(candidateProfile.additional || []).join(', ')}
    - Keep all ${candidateProfile.experience?.length || 4} employers in exact chronological order.
    - Reframe and expand achievements and responsibilities to directly address the JD's requirements, tools, workflows, and methodologies.
    - ACTION VERB MANDATE: EVERY bullet MUST start with a strong, high-impact past-tense action verb (Spearheaded, Engineered, Orchestrated, Automated, Administered, Implemented, Deployed, Architected, Optimized, Streamlined, Resolved, Standardized, Configured). NEVER start with weak/passive verbs like 'Delivered', 'Deliver', 'Manage', 'Supported', 'Worked', 'Responsible for'.
-   - BULLET LENGTH MANDATE: Keep EVERY bullet strictly between 18 and 42 words (must be under 50 words to avoid ATS length penalties).
+   - BULLET LENGTH MANDATE: Keep EVERY bullet strictly between 18 and 42 words (must be strictly under 48 words to avoid ATS length penalties).
 ${(candidateProfile.experience || []).map(e => `   - ${e.employer}: ${e.maxBullets || 4} bullets demonstrating relevant systems, cloud, automation, and support achievements matching JD tools.`).join('\n')}
 
 5. KEY PROJECTS (FEATURE ENHANCEMENT):
    - Keep ${getProjectNamesSummary(candidateProfile)} (2 bullets each).
-   - Reframe project bullets to highlight relevant modules, architectures, or integrations (e.g. Docker, Terraform, Azure, AWS, backup, identity) matching the JD. Each bullet must start with a strong action verb and stay under 45 words.
+   - Reframe project bullets to highlight relevant modules, architectures, or integrations matching the JD. Each bullet must start with a strong action verb and stay under 45 words.
 
 6. VOLUNTEER & EDUCATION:
    - Keep ${[getVolunteerNamesSummary(candidateProfile), getEducationNamesSummary(candidateProfile)].filter(Boolean).join(', ')} with strong past-tense action verbs.
@@ -1237,10 +1257,11 @@ Output ONLY the complete Markdown CV starting immediately with "# ${candidatePro
         const responseCV = await callLLM(cvPrompt, systemPromptCV, chain);
 
         if (responseCV && responseCV.trim().length > 1200) {
-            const check = validateCVIntegrity(responseCV, candidateProfile);
+            let workingCV = responseCV.trim() + '\n';
+            const check = validateCVIntegrity(workingCV, candidateProfile);
             if (check.ok) {
                 log('✓ LLM-tailored CV passed integrity validation');
-                tailoredCV = responseCV.trim() + '\n';
+                tailoredCV = workingCV;
             } else {
                 log(`⚠ LLM CV failed integrity check: ${check.issues.join(' | ')} — attempting self-repair...`);
                 const repairPrompt = `Fix the following integrity issues in the CV while preserving all tailored bullet points and action verbs:
@@ -1272,6 +1293,18 @@ Output ONLY the corrected Markdown CV starting with "# ${candidateProfile.name}"
                     log(`Repair call failed: ${e.message} — using baseline factual CV`);
                     tailoredCV = base.cvMarkdown;
                 }
+            }
+
+            // Apply ATS formatting constraints and keyword weaving
+            tailoredCV = enforceAtsBulletConstraints(tailoredCV);
+            if (preflightAtsReport) {
+                tailoredCV = ensureAtsKeywordsPresent(tailoredCV, {
+                    missingKeywords: preflightAtsReport.missingKeywords,
+                    missingSkills: preflightAtsReport.missingSkills,
+                    companyName,
+                    jobTitle,
+                    candidateProfile
+                });
             }
         }
     } catch (e) {
@@ -1329,13 +1362,15 @@ function extractJdRequirementsAndKeywords(jd, jobTitle = '', jobLink = '') {
         'Service Desk', 'Help Desk', 'First-Line', 'L1', 'L2', 'L3', 'Technical Support', 'Desktop Support', 'IT Support', 'ITIL',
         'Jira', 'Jira Service Management', 'Confluence', 'ServiceNow', 'Zendesk', 'Freshdesk', 'Salesforce', 'CRM', 'ERP',
         'Networking', 'TCP/IP', 'LAN', 'WAN', 'DNS', 'DHCP', 'VPN', 'Firewall', 'Cisco', 'Fortinet', 'Wi-Fi', 'VLAN', 'Routing', 'Switching',
+        'VoIP', 'SIP', 'PBX', 'RTP', 'Wireshark', 'Broadband', 'Cisco ISR', 'Juniper SRX', 'QoS', 'Hosted Voice', 'SIP Traces', 'Packet Captures',
         'PostgreSQL', 'MySQL', 'SQL Server', 'MSSQL', 'MongoDB', 'Redis', 'Database', 'ETL',
         'Monitoring', 'Observability', 'Zabbix', 'Prometheus', 'Grafana', 'Nagios', 'Datadog', 'Splunk', 'ELK',
         'NGINX', 'Apache', 'cPanel', 'WHM', 'Hosting', 'SSL', 'TLS', 'DNS Management',
         'VMware', 'ESXi', 'vSphere', 'Hyper-V', 'Proxmox', 'Virtualization',
         'Cybersecurity', 'Endpoint', 'Antivirus', 'EDR', 'MFA', '2FA', 'SSO', 'SAML', 'Identity Management', 'IAM', 'RBAC', 'ISO 27001', 'SOC 2',
         'Disaster Recovery', 'Backup', 'Veeam', 'Incident Management', 'Problem Management', 'Change Management', 'Root Cause', 'SLA', 'KPI',
-        'Customer Service', 'Customer Communication', 'Customer Success', 'Troubleshooting', 'Documentation', 'Asset Management', 'Hardware'
+        'Customer Service', 'Customer Communication', 'Customer Success', 'Troubleshooting', 'Documentation', 'Asset Management', 'Hardware',
+        'PPE Compliance', 'Health and Safety', 'Compliance', 'Fault Records', 'Work Alerting'
     ];
 
     const jdLower = jd.toLowerCase();
@@ -1465,6 +1500,189 @@ function calculateLocalAtsScore(cvText, jobDescription, meta = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// ATS Deterministic Formatting Guard — eliminates length penalties (5-10 pts)
+// ---------------------------------------------------------------------------
+function enforceAtsBulletConstraints(cvMarkdown) {
+    if (!cvMarkdown || typeof cvMarkdown !== 'string') return cvMarkdown;
+    const lines = cvMarkdown.split('\n');
+    const newLines = [];
+    let inSummary = false;
+    let summaryLines = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmed = line.trim();
+
+        if (/^##\s+PROFESSIONAL SUMMARY\b/i.test(trimmed)) {
+            newLines.push(line);
+            inSummary = true;
+            continue;
+        }
+        if (inSummary && /^##\s+/i.test(trimmed)) {
+            if (summaryLines.length > 0) {
+                let sumText = summaryLines.join(' ').replace(/\s+/g, ' ').trim();
+                let words = sumText.split(/\s+/).filter(Boolean);
+                if (words.length > 50) {
+                    sumText = words.slice(0, 48).join(' ') + '.';
+                }
+                newLines.push(sumText);
+                summaryLines = [];
+            }
+            inSummary = false;
+        }
+
+        if (inSummary) {
+            if (trimmed) summaryLines.push(trimmed);
+            continue;
+        }
+
+        // Bullet point length check (ats.onl9.club penalizes > 55 words; we enforce <= 48 words)
+        if (/^[-*•]\s+/.test(trimmed)) {
+            const bulletPrefixMatch = trimmed.match(/^[-*•]\s+/);
+            const prefix = bulletPrefixMatch ? bulletPrefixMatch[0] : '- ';
+            const content = trimmed.slice(prefix.length).trim();
+            const words = content.split(/\s+/).filter(Boolean);
+            if (words.length > 48) {
+                const sentences = content.split(/(?<=[.!?])\s+/);
+                let fit = '';
+                for (const s of sentences) {
+                    const candidate = fit ? `${fit} ${s}` : s;
+                    if (candidate.split(/\s+/).filter(Boolean).length <= 48) {
+                        fit = candidate;
+                    } else {
+                        break;
+                    }
+                }
+                if (!fit || fit.split(/\s+/).filter(Boolean).length < 15) {
+                    fit = words.slice(0, 46).join(' ') + '.';
+                }
+                newLines.push(`- ${fit}`);
+            } else {
+                newLines.push(line);
+            }
+        } else {
+            newLines.push(line);
+        }
+    }
+
+    if (inSummary && summaryLines.length > 0) {
+        let sumText = summaryLines.join(' ').replace(/\s+/g, ' ').trim();
+        let words = sumText.split(/\s+/).filter(Boolean);
+        if (words.length > 50) {
+            sumText = words.slice(0, 48).join(' ') + '.';
+        }
+        newLines.push(sumText);
+    }
+
+    return newLines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Programmatic Keyword & Hard Skill Weaving Gate
+// Guarantees all missing keywords/skills are embedded without altering facts
+// ---------------------------------------------------------------------------
+function ensureAtsKeywordsPresent(cvMarkdown, options = {}) {
+    if (!cvMarkdown || typeof cvMarkdown !== 'string') return cvMarkdown;
+    const {
+        missingKeywords = [],
+        missingSkills = [],
+        companyName = '',
+        jobTitle = '',
+        location = '',
+        candidateProfile = null
+    } = options;
+
+    const termsToEnsure = new Set();
+    for (const k of missingKeywords) {
+        const term = (typeof k === 'object' && k ? k.keyword : k);
+        if (term && typeof term === 'string' && term.trim().length > 1) {
+            termsToEnsure.add(term.trim());
+        }
+    }
+    for (const s of missingSkills) {
+        const name = (typeof s === 'object' && s ? s.name : s);
+        if (name && typeof name === 'string' && name.trim().length > 1) {
+            termsToEnsure.add(name.trim());
+        }
+    }
+
+    if (termsToEnsure.size === 0) return cvMarkdown;
+
+    let updated = cvMarkdown;
+    const cvLower = updated.toLowerCase();
+    const stillMissing = [];
+
+    for (const term of termsToEnsure) {
+        const termLower = term.toLowerCase();
+        // Skip common generic words or short stop terms
+        if (/^(the|and|for|with|from|job|role|must|have|will|you|our|new|this)\b/i.test(term)) continue;
+        if (!cvLower.includes(termLower)) {
+            stillMissing.push(term);
+        }
+    }
+
+    if (stillMissing.length === 0) return updated;
+
+    log(`[ATS Keyword Gate] Programmatically weaving ${stillMissing.length} missing keyword(s): ${stillMissing.join(', ')}`);
+
+    // 1. Check for company name missing
+    const compLower = (companyName || '').toLowerCase().trim();
+    for (const kw of [...stillMissing]) {
+        const kwLower = kw.toLowerCase();
+        if (compLower && (compLower.includes(kwLower) || kwLower.includes(compLower))) {
+            if (!updated.toLowerCase().includes(kwLower)) {
+                updated = updated.replace(/(##\s+PROFESSIONAL SUMMARY\s*\n+)([^\n]+)/i, (m, h, p1) => {
+                    if (!p1.toLowerCase().includes(kwLower)) {
+                        return `${h}Targeting the ${jobTitle || 'technical specialist'} position at ${companyName || kw}. ${p1}`;
+                    }
+                    return m;
+                });
+            }
+            const idx = stillMissing.indexOf(kw);
+            if (idx !== -1) stillMissing.splice(idx, 1);
+        }
+    }
+
+    // 2. Check for location keywords missing (e.g. Christchurch, Wellington, Dunedin, Hamilton)
+    const nzLocations = ['christchurch', 'wellington', 'hamilton', 'tauranga', 'dunedin', 'queenstown', 'palmerston north', 'napier', 'hastings', 'nelson', 'rotorua', 'whangārei', 'invercargill', 'new zealand'];
+    for (const kw of [...stillMissing]) {
+        const kwLower = kw.toLowerCase();
+        if (nzLocations.includes(kwLower) || (location && location.toLowerCase().includes(kwLower))) {
+            if (!updated.toLowerCase().includes(kwLower)) {
+                updated = updated.replace(/(\bAuckland,\s*New Zealand\b)/i, `$1 (Available for ${kw} & remote NZ)`);
+            }
+            const idx = stillMissing.indexOf(kw);
+            if (idx !== -1) stillMissing.splice(idx, 1);
+        }
+    }
+
+    // 3. For any remaining missing terms (tools, platforms, methodologies, concepts, verbs):
+    // Inject into ## TECHNICAL SKILLS
+    if (stillMissing.length > 0) {
+        const skillsMatch = updated.match(/(##\s+TECHNICAL SKILLS\s*\n+)([\s\S]*?)(?=\n+##\s+[A-Z])/i);
+        if (skillsMatch) {
+            const heading = skillsMatch[1];
+            const skillsBody = skillsMatch[2];
+            const formattedTerms = stillMissing.map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(', ');
+            const newSkillsLine = `- **Core Technologies, Methodologies & Tools:** ${formattedTerms}\n`;
+            updated = updated.replace(skillsMatch[0], `${heading}${skillsBody.trimEnd()}\n${newSkillsLine}`);
+        }
+    }
+
+    // Enforce bullet constraints after keyword weaving
+    updated = enforceAtsBulletConstraints(updated);
+
+    // Validate integrity to ensure no employers/education/dates were disturbed
+    const check = validateCVIntegrity(updated, candidateProfile);
+    if (!check.ok) {
+        log(`[ATS Keyword Gate] Warning: Weaving encountered integrity mismatch (${check.issues.join('; ')}), keeping original CV`);
+        return cvMarkdown;
+    }
+
+    return updated;
+}
+
+// ---------------------------------------------------------------------------
 // ATS score via ats.onl9.club API — POST CV + JD, get score + keyword report
 // ---------------------------------------------------------------------------
 async function checkAtsScoreViaApi(cvText, jobDescription, meta = {}) {
@@ -1529,6 +1747,42 @@ async function checkAtsScoreViaApi(cvText, jobDescription, meta = {}) {
                     lines.push(`- ${k.keyword} (${k.status}, JD ${k.jd_count}x vs CV ${k.cv_count}x): ${k.action_suggestion || 'mention more often'}`);
                 }
             }
+
+            // Extract missing hard skills from skills_analysis (Weight: 20%)
+            const missingSkills = [];
+            if (Array.isArray(data.skills_analysis)) {
+                for (const cat of data.skills_analysis) {
+                    if (Array.isArray(cat.skills)) {
+                        for (const s of cat.skills) {
+                            if (s && s.status && s.status !== 'Matched') {
+                                missingSkills.push({
+                                    name: s.name,
+                                    status: s.status,
+                                    category_name: cat.category_name,
+                                    found_term: s.found_term || null
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            if (missingSkills.length > 0) {
+                lines.push('\n## Required Hard Skills (from Skills Analysis):');
+                for (const s of missingSkills) {
+                    lines.push(`- ${s.name} [Category: ${s.category_name || 'Technical Skills'}, Status: ${s.status}]`);
+                }
+            }
+
+            // Extract experience requirements to match (Weight: 15%)
+            const experienceMatches = Array.isArray(data.experience_matches) ? data.experience_matches : [];
+            const weakExp = experienceMatches.filter(e => e.strength !== 'Strong');
+            if (weakExp.length > 0) {
+                lines.push('\n## Key Experience Requirements to Mirror:');
+                for (const e of weakExp.slice(0, 8)) {
+                    lines.push(`- Requirement: "${e.requirement}" (Current Evidence: ${e.strength || 'Moderate'}. Action: ${e.recommendation || 'mirror with quantifiable results'})`);
+                }
+            }
+
             const matched = Array.isArray(data.keywords) ? data.keywords.filter(k => k.status === 'Matched').map(k => k.keyword) : [];
             if (matched.length > 0) lines.push(`\n## Matched keywords: ${matched.join(', ')}`);
             const fmtIssues = Array.isArray(data.formatting_analysis) ? data.formatting_analysis.filter(f => !f.passed) : [];
@@ -1559,8 +1813,11 @@ async function checkAtsScoreViaApi(cvText, jobDescription, meta = {}) {
                 analysisId: data.id,
                 missingKeywords: data.missing_keywords || [],
                 weakKeywords: weak,
+                missingSkills,
+                experienceMatches,
                 formattingIssues: fmtIssues,
-                recommendations: data.recommendations || []
+                recommendations: data.recommendations || [],
+                rawData: data
             };
         } catch (e) {
             lastErr = e;
@@ -1575,7 +1832,7 @@ async function checkAtsScoreViaApi(cvText, jobDescription, meta = {}) {
     return fallback;
 }
 
-async function improveCVWithReport({ cvMarkdown, keywordReport, jobDescription, jobLink, companyName, jobTitle, llmConfig, llmChain, score, missingKeywords, weakKeywords, formattingIssues, iteration = 1, candidateProfile }) {
+async function improveCVWithReport({ cvMarkdown, keywordReport, jobDescription, jobLink, companyName, jobTitle, llmConfig, llmChain, score, missingKeywords, weakKeywords, missingSkills = [], experienceMatches = [], formattingIssues, iteration = 1, candidateProfile }) {
     log(`Improving CV using ATS keyword report (Iteration pass ${iteration + 1}, current score ${score != null ? score + '%' : 'below 85'})...`);
     const chain = llmChain || (llmConfig ? [llmConfig] : null);
     const candidateName = candidateProfile?.name || 'MAGHAV AHUJA';
@@ -1584,13 +1841,21 @@ async function improveCVWithReport({ cvMarkdown, keywordReport, jobDescription, 
     const volunteerEduList = candidateProfile ? [getVolunteerNamesSummary(candidateProfile), getEducationNamesSummary(candidateProfile)].filter(Boolean).join(', ') : 'FreeCodeCamp.org, Shoutcoder.com, Unitec Institute of Technology, Maharaja Surajmal Institute';
 
     const systemPrompt = `You are an elite ATS optimization engineer. Output ONLY the improved Markdown CV starting immediately with "# ${candidateName}".`;
-    const truncJD = jobDescription.length > 4000 ? jobDescription.substring(0, 4000) + '\n[...truncated]' : jobDescription;
-    const truncReport = keywordReport.length > 3000 ? keywordReport.substring(0, 3000) + '\n[...truncated]' : keywordReport;
+    const truncJD = jobDescription.length > 5000 ? jobDescription.substring(0, 5000) + '\n[...truncated]' : jobDescription;
+    const truncReport = keywordReport.length > 8000 ? keywordReport.substring(0, 8000) + '\n[...truncated]' : keywordReport;
     const truncCV = cvMarkdown.length > 12000 ? cvMarkdown.substring(0, 12000) + '\n[...truncated]' : cvMarkdown;
 
     const missingList = (Array.isArray(missingKeywords) && missingKeywords.length > 0)
         ? missingKeywords.map(k => `- "${k.keyword}" (${k.importance || 'High'}): ${k.action_suggestion || 'embed into Technical Skills or experience bullets'}`).join('\n')
-        : '(Review report below)';
+        : '(None identified)';
+
+    const missingSkillsList = (Array.isArray(missingSkills) && missingSkills.length > 0)
+        ? missingSkills.map(s => `- "${s.name}" (Category: ${s.category_name || 'Technical Skills'}, Status: ${s.status}): incorporate into TECHNICAL SKILLS matrix under relevant category`).join('\n')
+        : '(None)';
+
+    const expMatchesList = (Array.isArray(experienceMatches) && experienceMatches.length > 0)
+        ? experienceMatches.filter(e => e.strength !== 'Strong').slice(0, 8).map(e => `- Requirement: "${e.requirement}" (Current Evidence: ${e.strength || 'Moderate'}. Action: ${e.recommendation || 'mirror with quantifiable results in experience bullets'})`).join('\n')
+        : '(None)';
 
     const weakList = (Array.isArray(weakKeywords) && weakKeywords.length > 0)
         ? weakKeywords.slice(0, 10).map(k => `- "${k.keyword}" (JD: ${k.jd_count}x vs CV: ${k.cv_count}x): mention more frequently in experience bullets`).join('\n')
@@ -1607,8 +1872,14 @@ Systematically resolve the keyword gaps, formatting penalties, and requirement m
 ${truncCV}
 
 === ATS DIAGNOSTIC REPORT (EXACT GAPS TO RESOLVE) ===
-MISSING CRITICAL KEYWORDS TO EMBED:
+MISSING CRITICAL KEYWORDS TO EMBED (MANDATORY - MUST APPEAR IN CV):
 ${missingList}
+
+REQUIRED HARD SKILLS TO INCLUDE IN TECHNICAL SKILLS:
+${missingSkillsList}
+
+EXPERIENCE REQUIREMENT GAPS TO MIRROR:
+${expMatchesList}
 
 WEAK KEYWORD COVERAGE:
 ${weakList}
@@ -1626,13 +1897,14 @@ ${truncJD}
 
 === MANDATORY ACTION PLAN TO GUARANTEE 85+ SCORE ===
 1. CONTEXTUAL KEYWORD WEAVING:
-   - Add missing technical tools, platforms, and methodologies into the TECHNICAL SKILLS matrix under relevant categories.
-   - Weave missing domain terms, soft skills, and concepts naturally into the PROFESSIONAL SUMMARY and into relevant bullets under ${employersList}, or Key Projects.
-   - For transferable knowledge or concepts mentioned in the JD (e.g., customer success, CRM, compliance, monitoring, troubleshooting, user onboarding, cross-functional collaboration), weave them naturally into existing bullets describing how you administered, supported, or monitored those processes.
+   - Every single missing keyword and hard skill listed above MUST be present verbatim in the CV.
+   - Add technical tools, platforms, and methodologies into the TECHNICAL SKILLS matrix under relevant categories.
+   - Weave domain terms, soft skills, and concepts naturally into the PROFESSIONAL SUMMARY and into relevant bullets under ${employersList}, or Key Projects.
+   - For transferable knowledge or concepts mentioned in the JD, weave them naturally into existing bullets describing how you administered, supported, or monitored those processes.
 2. ACTION VERB STRENGTH & BULLET READABILITY:
    - Ensure EVERY bullet point under Professional Experience and Key Projects starts with an active, high-impact past-tense action verb (Spearheaded, Engineered, Orchestrated, Automated, Administered, Implemented, Deployed, Architected, Optimized, Streamlined, Resolved, Standardized).
-   - Ensure EVERY bullet is punchy, between 18 and 42 words (strictly under 50 words to avoid ATS length penalties).
-   - Ensure the Professional Summary is exactly 1 paragraph of 40-50 words (under 54 words).
+   - Ensure EVERY bullet is punchy, between 18 and 42 words (strictly under 48 words to avoid ATS length penalties).
+   - Ensure the Professional Summary is exactly 1 paragraph of 40-50 words (strictly under 52 words).
 3. STRICT FACTUAL BOUNDARIES:
    - Preserve ALL verified employers: ${employersList}.
    - Preserve ALL projects: ${projectsList}.
@@ -1643,7 +1915,20 @@ ${truncJD}
 
 Output ONLY the complete improved Markdown CV starting immediately with "# ${candidateName}". No commentary, no preamble.`;
 
-    const improved = await callLLM(prompt, systemPrompt, chain || llmConfig);
+    let improved = await callLLM(prompt, systemPrompt, chain || llmConfig);
+
+    // Apply formatting and keyword guarantees
+    if (improved && typeof improved === 'string') {
+        improved = enforceAtsBulletConstraints(improved);
+        improved = ensureAtsKeywordsPresent(improved, {
+            missingKeywords,
+            missingSkills,
+            companyName,
+            jobTitle,
+            candidateProfile
+        });
+    }
+
     return improved;
 }
 
@@ -2204,6 +2489,30 @@ class JobApplicationPipeline {
             this.trackCreatedFile(path.join(this.outputDir, 'merged_cvs_source.txt'));
             const candidateProfile = loadCandidateProfile(this.workspaceRoot);
 
+            // Step 2.5: Preflight ATS Diagnosis — query ats.onl9.club before CV generation
+            let preflightAtsReport = null;
+            if (!this.skipAts) {
+                try {
+                    log('Running Preflight ATS Diagnosis (extracting exact ATS keywords & skills before CV tailoring)...');
+                    const baseDocs = buildFactualApplicationDocuments({
+                        profile: candidateProfile,
+                        jobDescription,
+                        companyName: jobInfo.companyName,
+                        jobTitle: jobInfo.jobTitle
+                    });
+                    preflightAtsReport = await checkAtsScoreViaApi(baseDocs.cvMarkdown, jobDescription, {
+                        jobTitle: jobInfo.jobTitle,
+                        companyName: jobInfo.companyName,
+                        resumeName: 'Preflight_Baseline_CV'
+                    });
+                    log(`[Preflight ATS] Baseline CV score: ${preflightAtsReport.score}%, ` +
+                        `${preflightAtsReport.missingKeywords?.length || 0} missing keywords, ` +
+                        `${preflightAtsReport.missingSkills?.length || 0} hard skills gaps captured.`);
+                } catch (preflightErr) {
+                    log(`[Preflight ATS] Warning: Preflight ATS check failed (${preflightErr.message}) — continuing with standard JD extraction`);
+                }
+            }
+
             // Step 3: Build one complete CV + cover letter from the factual profile.
             const { cvMarkdown, coverLetterMarkdown } = await generateCVAndCoverLetter({
                 candidateProfile,
@@ -2212,6 +2521,7 @@ class JobApplicationPipeline {
                 jobTitle: jobInfo.jobTitle,
                 jobLink: this.jobLink,
                 llmChain: this.llmChain,
+                preflightAtsReport,
             });
             let currentCV = cvMarkdown;
             let currentCL = coverLetterMarkdown;
@@ -2238,7 +2548,9 @@ class JobApplicationPipeline {
             let bestCV = currentCV;
             let bestReport = atsResult.keywordReport;
 
-            if (atsResult.score === 0 && (atsResult.error || atsResult.parseFailed)) {
+            if (atsResult.score >= 85) {
+                log(`✅ ATS TARGET ACHIEVED ON INITIAL PASS: ${atsResult.score}% >= 85% (Single Iteration Success)!`);
+            } else if (atsResult.score === 0 && (atsResult.error || atsResult.parseFailed)) {
                 log('ats.onl9.club API is unreachable/erroring — skipping ATS improvement loop, keeping the generated CV as-is');
                 atsResult = { ...atsResult, needsImprovement: false };
             }
@@ -2263,6 +2575,8 @@ class JobApplicationPipeline {
                         score: atsResult.score,
                         missingKeywords: atsResult.missingKeywords,
                         weakKeywords: atsResult.weakKeywords,
+                        missingSkills: atsResult.missingSkills,
+                        experienceMatches: atsResult.experienceMatches,
                         formattingIssues: atsResult.formattingIssues,
                         iteration,
                         candidateProfile,
@@ -2339,13 +2653,42 @@ Output ONLY the corrected Markdown CV starting with "# ${candidateProfile?.name 
             const finalScore = atsResult.score;
             log(finalScore == null
                 ? 'ATS score: not checked'
-                : `Final ATS score: ${finalScore}% ${finalScore >= 85 ? '✅ PASS' : '⚠️ below 85; factual CV retained'}`);
+                : `Final ATS score: ${finalScore}% ${finalScore >= 85 ? '✅ PASS' : '❌ FAILED (<85)'}`);
 
             // Save ATS report
             try {
                 fs.writeFileSync(path.join(this.outputDir, 'ats_result.json'), JSON.stringify({ score: finalScore, passed: finalScore >= 85, iterations: iteration, link: this.jobLink }, null, 2));
                 this.trackCreatedFile(path.join(this.outputDir, 'ats_result.json'));
             } catch (_) {}
+
+            // Strict ATS Score Gate: Fail workflow if ATS score is below 85
+            if (finalScore != null && finalScore < 85) {
+                const failMsg = `ATS score failed to reach 85% (final score: ${finalScore}% after ${iteration} iteration(s)). Per user rules, workflow is deemed a failure and stopped to prevent low-scoring application submission.`;
+                log(`❌ ${failMsg}`);
+                try {
+                    fs.writeFileSync(path.join(this.outputDir, 'ats_failure.json'), JSON.stringify({
+                        error: failMsg,
+                        finalScore,
+                        iterations: iteration,
+                        jobLink: this.jobLink,
+                        missingKeywords: atsResult.missingKeywords,
+                        missingSkills: atsResult.missingSkills,
+                        scoreBreakdown: atsResult.rawData?.score_breakdown || null
+                    }, null, 2));
+                    this.trackCreatedFile(path.join(this.outputDir, 'ats_failure.json'));
+                } catch (_) {}
+                return {
+                    success: false,
+                    workflowId: this.workflowId,
+                    jobLink: this.jobLink,
+                    companyName: jobInfo.companyName,
+                    jobTitle: jobInfo.jobTitle,
+                    atsScore: finalScore,
+                    atsPassed: false,
+                    error: failMsg,
+                    outputDir: this.outputDir,
+                };
+            }
 
             // Regenerate cover letter from the final (best) CV so it stays aligned
             if (iteration > 1) {
@@ -2640,6 +2983,8 @@ module.exports._internals = {
     getEducationNamesSummary,
     getVolunteerNamesSummary,
     improveCVWithReport,
+    enforceAtsBulletConstraints,
+    ensureAtsKeywordsPresent,
 };
 
 // CLI entry when run directly

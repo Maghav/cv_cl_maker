@@ -58,6 +58,11 @@ async function main() {
 
     try {
         const result = await pipeline.run();
+        if (!result || result.success === false) {
+            console.error('\nPipeline failed:', result?.error || 'Unknown error');
+            console.error(JSON.stringify(result, null, 2));
+            process.exit(1);
+        }
         console.log('\nPipeline completed successfully');
         console.log(JSON.stringify(result, null, 2));
         process.exit(0);

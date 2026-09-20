@@ -89,7 +89,8 @@ async function runE2ETest() {
         console.log('============================================================\n');
 
         assert.strictEqual(result.success, true, 'Pipeline must succeed');
-        assert(typeof result.atsScore === 'number' && result.atsScore >= 75, `ATS score must be >= 75% (got ${result.atsScore}%)`);
+        assert(typeof result.atsScore === 'number' && result.atsScore >= 85, `ATS score must be >= 85% (got ${result.atsScore}%)`);
+        assert.strictEqual(result.atsPassed, true, 'ATS check must pass (score >= 85%)');
         assert.strictEqual(result.cvPdfPages, 2, 'CV PDF must be exactly 2 pages');
         assert.strictEqual(result.clPdfPages, 1, 'Cover Letter PDF must be exactly 1 page');
 

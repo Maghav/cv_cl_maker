@@ -129,8 +129,13 @@ function startPipeline(jobLink, llmOverrides = {}, extraEnv = {}, options = {}) 
             console.log(`[server] Pipeline ${workflowId} completed`);
         } else {
             job.status = 'failed';
-            job.error = stderr.slice(-2000) || `Pipeline exited with code ${code}`;
-            console.error(`[server] Pipeline ${workflowId} failed code=${code}`, stderr.slice(-1000));
+            let errText = stderr.slice(-2000).trim();
+            if (!errText) {
+                const failMatch = stdout.match(/Pipeline failed:?\s*([^\r\n]+)/);
+                if (failMatch) errText = failMatch[1].trim();
+            }
+            job.error = errText || `Pipeline exited with code ${code}`;
+            console.error(`[server] Pipeline ${workflowId} failed code=${code}`, job.error);
         }
     });
 
