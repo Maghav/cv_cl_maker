@@ -706,6 +706,7 @@ function detectPlatform(url) {
     if (u.includes('linkedin.com')) return 'linkedin';
     if (u.includes('indeed.com')) return 'indeed';
     if (u.includes('trademe.co')) return 'trademe';
+    if (u.includes('myworkdayjobs.com')) return 'workday';
     return 'generic';
 }
 
@@ -798,8 +799,110 @@ function getBrowserLaunchOptions() {
     return opts;
 }
 
+function parseWorkdayUrl(jobUrl) {
+    try {
+        const u = new URL(jobUrl);
+        if (!u.hostname.includes('myworkdayjobs.com')) return null;
+
+        const tenant = u.hostname.split('.')[0];
+        const segments = u.pathname.split('/').filter(Boolean);
+        let cleanSegments = segments;
+        if (/^[a-z]{2}(-[A-Z]{2})?$/i.test(cleanSegments[0])) {
+            cleanSegments = cleanSegments.slice(1);
+        }
+
+        const site = cleanSegments[0];
+        const slug = cleanSegments[cleanSegments.length - 1];
+
+        if (tenant && site && slug) {
+            return {
+                tenant,
+                site,
+                slug,
+                apiUrl: `https://${u.hostname}/wday/cxs/${tenant}/${site}/job/${slug}`
+            };
+        }
+    } catch (_) {}
+    return null;
+}
+
+function htmlToPlainText(html) {
+    if (!html) return '';
+    return html
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n\n')
+        .replace(/<\/li>/gi, '\n')
+        .replace(/<li>/gi, '• ')
+        .replace(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/gi, '\n\n$1\n\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
+async function scrapeWorkdayJob(jobLink) {
+    const parsed = parseWorkdayUrl(jobLink);
+    if (!parsed) return null;
+
+    log(`Attempting Workday CXS API fetch: ${parsed.apiUrl}`);
+    const res = await fetch(parsed.apiUrl, {
+        headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+        }
+    });
+
+    if (!res.ok) {
+        throw new Error(`Workday CXS API returned HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    const info = data.jobPostingInfo || {};
+    const rawDesc = info.jobDescription || '';
+    const description = htmlToPlainText(rawDesc);
+    if (!description || description.length < 50) {
+        throw new Error('Workday CXS API returned empty job description');
+    }
+
+    const jobTitle = info.title || 'Position';
+    let companyName = data.hiringOrganization?.name || '';
+    if (!companyName && info.location) {
+        const m = info.location.match(/NZ-(.+)$/i);
+        if (m) companyName = m[1].trim();
+    }
+    if (!companyName) {
+        companyName = parsed.tenant.toUpperCase();
+    }
+
+    const cleanedDescription = cleanAndValidateJobDescription(description, jobLink, jobTitle);
+    log(`✓ Workday CXS API scraped ${cleanedDescription.length} chars (title="${jobTitle}", company="${companyName}")`);
+    return {
+        description: cleanedDescription,
+        companyName,
+        jobTitle,
+        platform: 'workday'
+    };
+}
+
 async function scrapeJobDescription(jobLink, browserInstance) {
     log(`Scraping job description: ${jobLink} [${detectPlatform(jobLink)}]`);
+
+    // Workday fast-path: fetch directly from native CXS REST API
+    if (detectPlatform(jobLink) === 'workday' || (jobLink && jobLink.includes('myworkdayjobs.com'))) {
+        try {
+            const wdResult = await scrapeWorkdayJob(jobLink);
+            if (wdResult && wdResult.description && wdResult.description.length >= 100) {
+                return wdResult;
+            }
+        } catch (wdErr) {
+            log(`Workday CXS API fetch failed (${wdErr.message}) — falling back to browser scraping...`);
+        }
+    }
     const shouldClose = !browserInstance;
     const browser = browserInstance || await puppeteer.launch(getBrowserLaunchOptions());
     const page = await browser.newPage();
@@ -860,7 +963,11 @@ async function scrapeJobDescription(jobLink, browserInstance) {
         }
 
         // Wait for dynamic SPA / client-side rendering
-        await new Promise(r => setTimeout(r, 3000));
+        await page.waitForFunction(() => {
+            const el = document.querySelector('[data-automation-id="jobPostingDescription"], [data-automation="jobAdDetails"], [data-automation="jobDescription"], article, main, #content, .job-description');
+            return (el && el.innerText.trim().length > 100) || (document.body && document.body.innerText.trim().length > 200);
+        }, { timeout: 8000 }).catch(() => {});
+        await new Promise(r => setTimeout(r, 1000));
 
         // Try to dismiss common popups/cookie banners
         try {
@@ -914,9 +1021,12 @@ async function scrapeJobDescription(jobLink, browserInstance) {
         } else {
             description = await page.evaluate(() => {
                 const selectors = [
+                    '[data-automation-id="jobPostingDescription"]',
+                    '[data-automation-id="jobPostingPage"]',
                     'main',
                     'article',
                     '[data-automation="jobDescription"]',
+                    '[data-automation="jobAdDetails"]',
                     '[class*="job-description"]',
                     '[class*="jobDescription"]',
                     '[class*="job_description"]',
@@ -2985,6 +3095,9 @@ module.exports._internals = {
     improveCVWithReport,
     enforceAtsBulletConstraints,
     ensureAtsKeywordsPresent,
+    scrapeJobDescription,
+    scrapeWorkdayJob,
+    parseWorkdayUrl,
 };
 
 // CLI entry when run directly
