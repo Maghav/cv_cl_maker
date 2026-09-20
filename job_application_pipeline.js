@@ -20,6 +20,8 @@ const path = require('path');
 const crypto = require('crypto');
 const puppeteer = require('puppeteer');
 const { syncJobToNotion, cleanupOutputFiles } = require('./notion_sync');
+let aggregateProfiles;
+try { aggregateProfiles = require('./profile_aggregator').aggregateProfiles; } catch (_) {}
 let pdfParse;
 try { pdfParse = require('pdf-parse'); } catch (_) {}
 
@@ -68,7 +70,7 @@ function sanitizeCompanyName(name) {
         .substring(0, 40) || 'Company';
 }
 
-function loadCandidateProfile(workspaceRoot) {
+function loadCandidateProfile(workspaceRoot = __dirname) {
     const profilePath = path.join(workspaceRoot, 'candidate_profile.json');
     if (!fs.existsSync(profilePath)) {
         throw new Error(`Missing candidate profile: ${profilePath}`);
@@ -120,6 +122,12 @@ function classifyJob(jobTitle, jobDescription) {
 }
 
 function scoreForJob(item, jobText) {
+    if (!item) return 0;
+    if (typeof item === 'string') {
+        const words = new Set(jobText.split(' ').filter(w => w.length >= 5));
+        const itemWords = normaliseMatchText(item).split(' ');
+        return itemWords.reduce((sum, word) => sum + (words.has(word) ? 1 : 0), 0);
+    }
     const tags = Array.isArray(item.tags) ? item.tags : [];
     const tagScore = tags.reduce((sum, tag) => sum + (jobText.includes(normaliseMatchText(tag)) ? 4 : 0), 0);
     const words = new Set(jobText.split(' ').filter(w => w.length >= 5));
@@ -142,59 +150,120 @@ function nzDate(date = new Date()) {
     }).format(date);
 }
 
+// ---------------------------------------------------------------------------
+// Dynamic candidate profile fact formatters (decouples hardcoded strings)
+// ---------------------------------------------------------------------------
+function formatVerifiedEmployers(profile) {
+    if (!profile || !Array.isArray(profile.experience)) return '';
+    return profile.experience.map((e, idx) =>
+        `${idx + 1}. ${e.employer} | ${e.location || 'Auckland, New Zealand'} | ${e.role} | ${e.dates}`
+    ).join('\n');
+}
+
+function formatVerifiedProjects(profile) {
+    if (!profile || !Array.isArray(profile.projects)) return '';
+    return profile.projects.map((p, idx) =>
+        `${idx + 1}. ${p.name}${p.tech ? ` (${p.tech})` : ''}`
+    ).join('\n');
+}
+
+function formatVerifiedEducation(profile) {
+    if (!profile || !Array.isArray(profile.education)) return '';
+    return profile.education.map((ed, idx) =>
+        `${idx + 1}. ${ed.institution} | ${ed.location || 'Auckland, New Zealand'} | ${ed.qualification} | ${ed.dates}`
+    ).join('\n');
+}
+
+function formatVerifiedVolunteer(profile) {
+    if (!profile || !Array.isArray(profile.volunteer)) return '';
+    return profile.volunteer.map(v => {
+        const org = v.organisation || v.organization || '';
+        return `${org}${v.role ? ` (${v.role})` : ''}`;
+    }).filter(Boolean).join(', ');
+}
+
+function getEmployerNamesSummary(profile) {
+    if (!profile || !Array.isArray(profile.experience) || profile.experience.length === 0) {
+        return 'established enterprise organisations';
+    }
+    const names = profile.experience.map(e => e.employer);
+    if (names.length === 1) return names[0];
+    if (names.length === 2) return `${names[0]} and ${names[1]}`;
+    return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+function getProjectNamesSummary(profile) {
+    if (!profile || !Array.isArray(profile.projects) || profile.projects.length === 0) return '';
+    return profile.projects.map(p => p.name).join(', ');
+}
+
+function getEducationNamesSummary(profile) {
+    if (!profile || !Array.isArray(profile.education) || profile.education.length === 0) return '';
+    return profile.education.map(e => e.institution).join(', ');
+}
+
+function getVolunteerNamesSummary(profile) {
+    if (!profile || !Array.isArray(profile.volunteer) || profile.volunteer.length === 0) return '';
+    return profile.volunteer.map(v => v.organisation || v.organization).filter(Boolean).join(', ');
+}
+
 function buildFactualApplicationDocuments({ profile, jobDescription, companyName, jobTitle }) {
     const category = classifyJob(jobTitle, jobDescription);
     const jobText = normaliseMatchText(`${jobTitle} ${jobDescription}`);
-    const contact = profile.contact;
+    const contact = profile.contact || {};
+    const summary = (profile.summaryVariants && (profile.summaryVariants[category] || profile.summaryVariants.technicalSupport))
+        || profile.summary
+        || 'Experienced IT and systems professional with hands-on experience in infrastructure, support, and technical administration.';
     const lines = [
-        `# ${profile.name}`,
+        `# ${profile.name || 'MAGHAV AHUJA'}`,
         `## ${jobTitle || 'IT Support Professional'}`,
-        `${contact.email} | ${contact.phone} | ${contact.location}`,
-        `${contact.linkedin} | ${contact.github}`,
-        profile.workingRights,
+        `${contact.email || ''} | ${contact.phone || ''} | ${contact.location || ''}`,
+        `${contact.linkedin || ''} | ${contact.github || ''}`,
+        profile.workingRights || '',
         '',
         '## PROFESSIONAL SUMMARY',
-        profile.summaryVariants[category] || profile.summaryVariants.technicalSupport,
+        summary,
         '',
         '## TECHNICAL SKILLS'
     ];
 
-    for (const skill of rankedItems(profile.skills, jobText, profile.skills.length)) {
-        lines.push(`- **${skill.category}:** ${skill.text}`);
+    for (const skill of rankedItems(profile.skills || [], jobText, (profile.skills || []).length)) {
+        lines.push(`- **${skill.category || 'Technical Skills'}:** ${skill.text || skill}`);
     }
 
     lines.push('', '## PROFESSIONAL EXPERIENCE');
-    for (const role of profile.experience) {
-        lines.push(`### ${role.employer} | ${role.location}`);
-        lines.push(`#### ${role.role} | ${role.dates}`);
-        const bullets = rankedItems(role.bullets, jobText, role.maxBullets || role.bullets.length);
-        for (const bullet of bullets) lines.push(`- ${bullet.text}`);
+    for (const role of (profile.experience || [])) {
+        lines.push(`### ${role.employer} | ${role.location || ''}`);
+        lines.push(`#### ${role.role} | ${role.dates || ''}`);
+        const bullets = rankedItems(role.bullets || [], jobText, role.maxBullets || (role.bullets || []).length);
+        for (const bullet of bullets) lines.push(`- ${typeof bullet === 'object' ? (bullet.text || bullet) : bullet}`);
     }
 
     lines.push('', '## KEY PROJECTS');
-    for (const project of rankedItems(profile.projects, jobText)) {
+    for (const project of rankedItems(profile.projects || [], jobText)) {
         lines.push(`### ${project.name}`);
-        for (const bullet of project.bullets) lines.push(`- ${bullet}`);
+        for (const bullet of (project.bullets || [])) lines.push(`- ${typeof bullet === 'object' ? (bullet.text || bullet) : bullet}`);
     }
 
     lines.push('', '## VOLUNTEER EXPERIENCE');
-    for (const item of profile.volunteer) {
-        lines.push(`### ${item.organisation} | ${item.role}`);
-        lines.push(`- ${item.bullet}`);
+    for (const item of (profile.volunteer || [])) {
+        lines.push(`### ${item.organisation || item.organization || ''} | ${item.role || ''}`);
+        if (item.bullet) lines.push(`- ${item.bullet}`);
     }
 
     lines.push('', '## EDUCATION');
-    for (const item of profile.education) {
-        lines.push(`### ${item.institution} | ${item.location}`);
-        lines.push(`#### ${item.qualification} | ${item.dates}`);
-        lines.push(`- ${item.bullet}`);
+    for (const item of (profile.education || [])) {
+        lines.push(`### ${item.institution || ''} | ${item.location || ''}`);
+        lines.push(`#### ${item.qualification || ''} | ${item.dates || ''}`);
+        if (item.bullet) lines.push(`- ${item.bullet}`);
     }
 
     lines.push('', '## ADDITIONAL INFORMATION');
-    for (const item of profile.additional) lines.push(`- ${item}`);
+    for (const item of (profile.additional || [])) lines.push(`- ${item}`);
     const cvMarkdown = lines.join('\n').trim() + '\n';
 
-    const commonOpening = `I am applying for the ${jobTitle} role with ${companyName}. My background combines hands-on IT support, systems administration and customer service across Neurix, Datacom NZ, the Department of Education in Delhi and Mitre10 MEGA. I offer practical troubleshooting, clear communication and disciplined documentation, supported by a Master of Applied Technologies and current New Zealand work rights.`;
+    const employerSummary = getEmployerNamesSummary(profile);
+    const commonOpening = `I am applying for the ${jobTitle} role with ${companyName}. My background combines hands-on IT support, systems administration and customer service across ${employerSummary}. I offer practical troubleshooting, clear communication and disciplined documentation, supported by a Master of Applied Technologies and current New Zealand work rights.`;
     const bodyByCategory = {
         serviceDesk: [
             `At Neurix, I provide remote and on-site support for internal users and engineering teams, administer Windows Server, networking, VPN and access environments, and maintain support procedures. At Datacom NZ, I worked in a large multi-client help desk environment supporting Microsoft 365, Azure DevOps and cloud systems, collaborating with senior engineers on escalations and documenting handovers clearly.`,
@@ -213,12 +282,47 @@ function buildFactualApplicationDocuments({ profile, jobDescription, companyName
             `At Datacom NZ, I supported Azure DevOps CI/CD work for .NET and React applications across three project teams. My practical projects cover Azure/AWS application deployment, VPS and package administration, backup automation, Nextcloud and hands-on labs with Docker, Kubernetes, Prometheus and Grafana. I pair this technical breadth with user support, documentation and dependable incident communication.`
         ]
     };
-    const bodies = bodyByCategory[category] || bodyByCategory.technicalSupport;
-    const closing = `I am based in Auckland and hold a New Zealand Post-Study Work Visa valid to August 2027. I would welcome the opportunity to discuss how my support, systems and customer-service experience can contribute to ${companyName}.`;
+    const hasDefaultEmployers = (profile.experience || []).some(e =>
+        /Neurix/i.test(e.employer) || /Datacom/i.test(e.employer)
+    );
+    let bodies;
+    if (hasDefaultEmployers) {
+        bodies = bodyByCategory[category] || bodyByCategory.technicalSupport;
+    } else {
+        const primaryRoles = (profile.experience || []).slice(0, 2);
+        const secondaryRoles = (profile.experience || []).slice(2, 4);
+
+        const p1Roles = primaryRoles.map(r => {
+            const bulletText = Array.isArray(r.bullets) && r.bullets.length > 0
+                ? (typeof r.bullets[0] === 'object' ? r.bullets[0].text : r.bullets[0])
+                : `I served as ${r.role}`;
+            return `At ${r.employer}, ${bulletText.toLowerCase().startsWith('at ') ? bulletText.slice(3) : bulletText}`;
+        }).join(' ');
+
+        const p2Roles = secondaryRoles.length > 0
+            ? secondaryRoles.map(r => {
+                const bulletText = Array.isArray(r.bullets) && r.bullets.length > 0
+                    ? (typeof r.bullets[0] === 'object' ? r.bullets[0].text : r.bullets[0])
+                    : `I contributed as ${r.role}`;
+                return `Additionally, at ${r.employer}, ${bulletText.toLowerCase().startsWith('at ') ? bulletText.slice(3) : bulletText}`;
+            }).join(' ')
+            : `My technical and operational background enables me to deliver dependable results, document processes thoroughly, and communicate effectively with stakeholders.`;
+
+        bodies = [
+            p1Roles || `Across my professional roles, I have delivered dependable technical solutions and operational support.`,
+            p2Roles
+        ];
+    }
+    const closing = profile.workingRights && !hasDefaultEmployers
+        ? `I am based in ${profile.contact?.location || 'Auckland'} and hold ${profile.workingRights}. I would welcome the opportunity to discuss how my support, systems and customer-service experience can contribute to ${companyName}.`
+        : `I am based in Auckland and hold a New Zealand Post-Study Work Visa valid to August 2027. I would welcome the opportunity to discuss how my support, systems and customer-service experience can contribute to ${companyName}.`;
+    const candidateName = profile.name
+        ? profile.name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+        : 'Maghav Ahuja';
     const coverLetterMarkdown = [
         nzDate(), '', 'Hiring Team', companyName, '', `**Re: ${jobTitle}**`, '', 'Dear Hiring Team,', '',
-        commonOpening, '', bodies[0], '', bodies[1], '', closing, '', 'Yours sincerely,', '', 'Maghav Ahuja',
-        `${contact.email} | ${contact.phone}`
+        commonOpening, '', bodies[0], '', bodies[1], '', closing, '', 'Yours sincerely,', '', candidateName,
+        `${contact.email || ''} | ${contact.phone || ''}`
     ].join('\n').trim() + '\n';
 
     return { cvMarkdown, coverLetterMarkdown, category };
@@ -1081,28 +1185,22 @@ Contact: ${candidateProfile.contact.email} | ${candidateProfile.contact.phone} |
 Online: ${candidateProfile.contact.linkedin} | ${candidateProfile.contact.github}
 Rights: ${candidateProfile.workingRights}
 Verified Employers:
-1. Neurix Limited | Auckland, New Zealand | Systems/DevOps Engineer (Casual Contract) | 2025 - Present
-2. Datacom NZ | Auckland, New Zealand | Intern | April 2025 - June 2025
-3. Department of Education, Government of Delhi | New Delhi, India | Graduate Support Specialist | September 2022 - January 2023
-4. Mitre10 MEGA | Auckland, New Zealand | Security Team Member | August 2025 - Present
+${formatVerifiedEmployers(candidateProfile)}
 Verified Real Projects:
-1. Nextcloud & Systems Learning Lab
-2. Cloud Application Deployment
-3. VPS, Hosting & Recovery Lab
-Volunteer: FreeCodeCamp.org (Staff Member), Shoutcoder.com (Technical Support Analyst)
+${formatVerifiedProjects(candidateProfile)}
+Volunteer: ${formatVerifiedVolunteer(candidateProfile)}
 Education:
-1. Unitec Institute of Technology | Auckland, New Zealand | Master of Applied Technologies - Data Analysis (Level 9) | February 2023 - July 2024
-2. Maharaja Surajmal Institute | New Delhi, India | Bachelor of Computer Applications | 2019 - 2022
-Additional: Languages: English (fluent) and Hindi (native), Working rights: New Zealand Post-Study Work Visa, valid to August 2027, Availability: Willing to participate in on-call rotations and after-hours incident response, Interests: Automation, cloud systems, service excellence, Linux, SRE and hardware troubleshooting
+${formatVerifiedEducation(candidateProfile)}
+Additional: ${(candidateProfile.additional || []).join(', ')}
 
 === STRICT FACTUAL BOUNDARIES ===
 - DO NOT fabricate new companies, employers, employment dates, or job titles.
 - DO NOT fabricate new degrees, academic qualifications, or universities.
-- Keep ALL 4 employers, 3 projects, 2 volunteer organizations, and 2 education entries in the exact order specified.
+- Keep ALL ${candidateProfile.experience?.length || 4} employers, ${candidateProfile.projects?.length || 3} projects, ${candidateProfile.volunteer?.length || 2} volunteer organizations, and ${candidateProfile.education?.length || 2} education entries in the exact order specified.
 
 === MANDATORY ATS OPTIMIZATION RULES (TO GUARANTEE 90+ ATS SCORE) ===
 1. EXACT HEADER STRUCTURE:
-   # MAGHAV AHUJA
+   # ${candidateProfile.name}
    ## ${jobTitle}
    ${candidateProfile.contact.email} | ${candidateProfile.contact.phone} | ${candidateProfile.contact.location}
    ${candidateProfile.contact.linkedin} | ${candidateProfile.contact.github}
@@ -1117,28 +1215,25 @@ Additional: Languages: English (fluent) and Hindi (native), Working rights: New 
    - Weave tools naturally into relevant categories (e.g. Service Delivery & ITIL, Microsoft & Identity, Cloud & Infrastructure, Automation & Scripting, Networking & Security, Monitoring & Observability).
 
 4. PROFESSIONAL EXPERIENCE (AGGRESSIVE TAILORING & ACTION VERBS):
-   - Keep all 4 employers in exact chronological order.
+   - Keep all ${candidateProfile.experience?.length || 4} employers in exact chronological order.
    - Reframe and expand achievements and responsibilities to directly address the JD's requirements, tools, workflows, and methodologies.
    - ACTION VERB MANDATE: EVERY bullet MUST start with a strong, high-impact past-tense action verb (Spearheaded, Engineered, Orchestrated, Automated, Administered, Implemented, Deployed, Architected, Optimized, Streamlined, Resolved, Standardized, Configured). NEVER start with weak/passive verbs like 'Delivered', 'Deliver', 'Manage', 'Supported', 'Worked', 'Responsible for'.
    - BULLET LENGTH MANDATE: Keep EVERY bullet strictly between 18 and 42 words (must be under 50 words to avoid ATS length penalties).
-   - Neurix Limited: 6-7 bullets demonstrating relevant systems, cloud, automation, and support achievements matching JD tools.
-   - Datacom NZ: 4 bullets highlighting enterprise support, ticket resolution, M365/cloud, documentation, and CI/CD.
-   - Department of Education: 3 bullets emphasizing IT operations, user support, asset records, and Python/AD automation.
-   - Mitre10 MEGA: 2 bullets emphasizing calm customer communication under pressure, service quality, and continuous technical training.
+${(candidateProfile.experience || []).map(e => `   - ${e.employer}: ${e.maxBullets || 4} bullets demonstrating relevant systems, cloud, automation, and support achievements matching JD tools.`).join('\n')}
 
 5. KEY PROJECTS (FEATURE ENHANCEMENT):
-   - Keep Nextcloud & Systems Learning Lab, Cloud Application Deployment, VPS, Hosting & Recovery Lab (2 bullets each).
+   - Keep ${getProjectNamesSummary(candidateProfile)} (2 bullets each).
    - Reframe project bullets to highlight relevant modules, architectures, or integrations (e.g. Docker, Terraform, Azure, AWS, backup, identity) matching the JD. Each bullet must start with a strong action verb and stay under 45 words.
 
 6. VOLUNTEER & EDUCATION:
-   - Keep FreeCodeCamp.org, Shoutcoder.com, Unitec Institute of Technology, and Maharaja Surajmal Institute with strong past-tense action verbs.
+   - Keep ${[getVolunteerNamesSummary(candidateProfile), getEducationNamesSummary(candidateProfile)].filter(Boolean).join(', ')} with strong past-tense action verbs.
 
 7. TARGET WORD COUNT:
    - 900 to 1020 words total. This ensures the rendered PDF fits exactly 2 full A4 pages without overflowing.
 
-Output ONLY the complete Markdown CV starting immediately with "# MAGHAV AHUJA". No preamble, no chain-of-thought, no commentary.`;
+Output ONLY the complete Markdown CV starting immediately with "# ${candidateProfile.name}". No preamble, no chain-of-thought, no commentary.`;
 
-        const systemPromptCV = 'You are an expert ATS CV writer. Output ONLY the tailored CV in markdown format starting immediately with "# MAGHAV AHUJA".';
+        const systemPromptCV = `You are an expert ATS CV writer. Output ONLY the tailored CV in markdown format starting immediately with "# ${candidateProfile.name}".`;
         const responseCV = await callLLM(cvPrompt, systemPromptCV, chain);
 
         if (responseCV && responseCV.trim().length > 1200) {
@@ -1153,16 +1248,16 @@ Issues to fix:
 ${check.issues.map((iss, i) => `${i + 1}. ${iss}`).join('\n')}
 
 Required verified facts:
-- Employers: Neurix Limited, Datacom NZ, Department of Education, Government of Delhi, Mitre10 MEGA
-- Key Projects: Nextcloud & Systems Learning Lab, Cloud Application Deployment, VPS, Hosting & Recovery Lab
-- Volunteer: FreeCodeCamp.org, Shoutcoder.com
-- Education: Unitec Institute of Technology, Maharaja Surajmal Institute
+- Employers: ${getEmployerNamesSummary(candidateProfile)}
+- Key Projects: ${getProjectNamesSummary(candidateProfile)}
+- Volunteer: ${getVolunteerNamesSummary(candidateProfile)}
+- Education: ${getEducationNamesSummary(candidateProfile)}
 - All 7 sections in order: PROFESSIONAL SUMMARY, TECHNICAL SKILLS, PROFESSIONAL EXPERIENCE, KEY PROJECTS, VOLUNTEER EXPERIENCE, EDUCATION, ADDITIONAL INFORMATION
 
 CV to fix:
 ${responseCV}
 
-Output ONLY the corrected Markdown CV starting with "# MAGHAV AHUJA".`;
+Output ONLY the corrected Markdown CV starting with "# ${candidateProfile.name}".`;
                 try {
                     const repaired = await callLLM(repairPrompt, systemPromptCV, chain);
                     const repairCheck = validateCVIntegrity(repaired, candidateProfile);
@@ -1186,7 +1281,8 @@ Output ONLY the corrected Markdown CV starting with "# MAGHAV AHUJA".`;
 
     // 2. LLM Tailored Cover Letter
     try {
-        const clPrompt = `Write a professional, compelling 1-page Cover Letter (300-380 words) in New Zealand English for Maghav Ahuja applying for "${jobTitle}" at "${companyName}".
+        const candidateName = candidateProfile.name || 'Maghav Ahuja';
+        const clPrompt = `Write a professional, compelling 1-page Cover Letter (300-380 words) in New Zealand English for ${candidateName} applying for "${jobTitle}" at "${companyName}".
 
 === TARGET JOB DESCRIPTION ===
 ${jobDescription.substring(0, 4000)}
@@ -1199,11 +1295,11 @@ ${tailoredCV.substring(0, 4000)}
 - Addressed to: Hiring Team, ${companyName}
 - Subject line: **Re: ${jobTitle}**
 - Greeting: Dear Hiring Team,
-- Paragraph 1: Enthusiastic opening stating the role, combining hands-on IT support/systems administration/customer service background across Neurix, Datacom NZ, Department of Education Delhi, and Mitre10 MEGA.
+- Paragraph 1: Enthusiastic opening stating the role, combining hands-on IT support/systems administration/customer service background across ${getEmployerNamesSummary(candidateProfile)}.
 - Paragraph 2: Connect technical accomplishments (M365/cloud/systems/troubleshooting/automation) directly to the specific requirements mentioned in the job description.
-- Paragraph 3: Highlight soft skills, calm customer communication under pressure (Mitre10/support), disciplined documentation, and fast ticket escalation.
+- Paragraph 3: Highlight soft skills, calm customer communication under pressure, disciplined documentation, and fast ticket escalation.
 - Paragraph 4: Auckland location, NZ Post-Study Work Visa (valid to August 2027), and enthusiasm to discuss how to contribute to ${companyName}.
-- Sign-off: Yours sincerely,\n\nMaghav Ahuja\n${candidateProfile.contact.email} | ${candidateProfile.contact.phone}
+- Sign-off: Yours sincerely,\n\n${candidateName}\n${candidateProfile.contact.email} | ${candidateProfile.contact.phone}
 
 Output ONLY the final Markdown Cover Letter. No preamble, no commentary.`;
 
@@ -1479,10 +1575,15 @@ async function checkAtsScoreViaApi(cvText, jobDescription, meta = {}) {
     return fallback;
 }
 
-async function improveCVWithReport({ cvMarkdown, keywordReport, jobDescription, jobLink, companyName, jobTitle, llmConfig, llmChain, score, missingKeywords, weakKeywords, formattingIssues, iteration = 1 }) {
+async function improveCVWithReport({ cvMarkdown, keywordReport, jobDescription, jobLink, companyName, jobTitle, llmConfig, llmChain, score, missingKeywords, weakKeywords, formattingIssues, iteration = 1, candidateProfile }) {
     log(`Improving CV using ATS keyword report (Iteration pass ${iteration + 1}, current score ${score != null ? score + '%' : 'below 85'})...`);
     const chain = llmChain || (llmConfig ? [llmConfig] : null);
-    const systemPrompt = 'You are an elite ATS optimization engineer. Output ONLY the improved Markdown CV starting immediately with "# MAGHAV AHUJA".';
+    const candidateName = candidateProfile?.name || 'MAGHAV AHUJA';
+    const employersList = candidateProfile ? getEmployerNamesSummary(candidateProfile) : 'Neurix Limited, Datacom NZ, Department of Education Government of Delhi, Mitre10 MEGA';
+    const projectsList = candidateProfile ? getProjectNamesSummary(candidateProfile) : 'Nextcloud & Systems Learning Lab, Cloud Application Deployment, VPS, Hosting & Recovery Lab';
+    const volunteerEduList = candidateProfile ? [getVolunteerNamesSummary(candidateProfile), getEducationNamesSummary(candidateProfile)].filter(Boolean).join(', ') : 'FreeCodeCamp.org, Shoutcoder.com, Unitec Institute of Technology, Maharaja Surajmal Institute';
+
+    const systemPrompt = `You are an elite ATS optimization engineer. Output ONLY the improved Markdown CV starting immediately with "# ${candidateName}".`;
     const truncJD = jobDescription.length > 4000 ? jobDescription.substring(0, 4000) + '\n[...truncated]' : jobDescription;
     const truncReport = keywordReport.length > 3000 ? keywordReport.substring(0, 3000) + '\n[...truncated]' : keywordReport;
     const truncCV = cvMarkdown.length > 12000 ? cvMarkdown.substring(0, 12000) + '\n[...truncated]' : cvMarkdown;
@@ -1526,21 +1627,21 @@ ${truncJD}
 === MANDATORY ACTION PLAN TO GUARANTEE 85+ SCORE ===
 1. CONTEXTUAL KEYWORD WEAVING:
    - Add missing technical tools, platforms, and methodologies into the TECHNICAL SKILLS matrix under relevant categories.
-   - Weave missing domain terms, soft skills, and concepts naturally into the PROFESSIONAL SUMMARY and into relevant bullets under Neurix, Datacom NZ, Department of Education, Mitre10, or Key Projects.
+   - Weave missing domain terms, soft skills, and concepts naturally into the PROFESSIONAL SUMMARY and into relevant bullets under ${employersList}, or Key Projects.
    - For transferable knowledge or concepts mentioned in the JD (e.g., customer success, CRM, compliance, monitoring, troubleshooting, user onboarding, cross-functional collaboration), weave them naturally into existing bullets describing how you administered, supported, or monitored those processes.
 2. ACTION VERB STRENGTH & BULLET READABILITY:
    - Ensure EVERY bullet point under Professional Experience and Key Projects starts with an active, high-impact past-tense action verb (Spearheaded, Engineered, Orchestrated, Automated, Administered, Implemented, Deployed, Architected, Optimized, Streamlined, Resolved, Standardized).
    - Ensure EVERY bullet is punchy, between 18 and 42 words (strictly under 50 words to avoid ATS length penalties).
    - Ensure the Professional Summary is exactly 1 paragraph of 40-50 words (under 54 words).
 3. STRICT FACTUAL BOUNDARIES:
-   - Preserve ALL verified employers: Neurix Limited, Datacom NZ, Department of Education Government of Delhi, Mitre10 MEGA.
-   - Preserve ALL projects: Nextcloud & Systems Learning Lab, Cloud Application Deployment, VPS, Hosting & Recovery Lab.
-   - Preserve FreeCodeCamp.org, Shoutcoder.com, Unitec Institute of Technology, Maharaja Surajmal Institute.
+   - Preserve ALL verified employers: ${employersList}.
+   - Preserve ALL projects: ${projectsList}.
+   - Preserve ${volunteerEduList}.
    - DO NOT invent new employers, companies, degrees, or dates.
 4. TARGET DENSITY:
    - Maintain 900 to 1020 words to fit exactly 2 full A4 pages in the rendered PDF.
 
-Output ONLY the complete improved Markdown CV starting immediately with "# MAGHAV AHUJA". No commentary, no preamble.`;
+Output ONLY the complete improved Markdown CV starting immediately with "# ${candidateName}". No commentary, no preamble.`;
 
     const improved = await callLLM(prompt, systemPrompt, chain || llmConfig);
     return improved;
@@ -1774,27 +1875,79 @@ async function generatePdfWithPageCheck(markdown, outputPath, targetPages, htmlC
 }
 
 // ---------------------------------------------------------------------------
+// Entity presence helper with alias and normalization tolerance
+// ---------------------------------------------------------------------------
+function containsEntity(text, primary, variations = []) {
+    if (!text || !primary) return false;
+    if (text.includes(primary)) return true;
+    const normText = normaliseMatchText(text);
+    if (normText.includes(normaliseMatchText(primary))) return true;
+    const allVars = [...variations];
+    const strippedSuffix = primary.replace(/\s+(Limited|Ltd|LLC|Inc|Corporation|Corp|NZ|New Zealand|MEGA)\b/gi, '').trim();
+    if (strippedSuffix && strippedSuffix !== primary) allVars.push(strippedSuffix);
+    if (primary.includes(',')) allVars.push(primary.split(',')[0].trim());
+    if (/\.(org|com|net|io)\b/i.test(primary)) allVars.push(primary.replace(/\.(org|com|net|io)\b/gi, ''));
+
+    for (const v of allVars) {
+        if (!v) continue;
+        if (text.includes(v)) return true;
+        if (normText.includes(normaliseMatchText(v))) return true;
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
 // CV integrity check — catches hallucinated/dropped content before it ships
 // ---------------------------------------------------------------------------
 function validateCVIntegrity(cvMarkdown, profile) {
     const issues = [];
+    if (typeof cvMarkdown !== 'string' || !cvMarkdown.trim()) {
+        issues.push('CV markdown is missing or empty');
+        return { issues, ok: false, valid: false };
+    }
+
+    // Defensive resolution: if caller passes non-object (e.g. legacy mergedText string), fall back to candidate profile
+    if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
+        try {
+            profile = loadCandidateProfile();
+        } catch (_) {
+            profile = null;
+        }
+    }
+
     const requiredSections = [
         'PROFESSIONAL SUMMARY', 'TECHNICAL SKILLS', 'PROFESSIONAL EXPERIENCE',
         'KEY PROJECTS', 'VOLUNTEER EXPERIENCE', 'EDUCATION', 'ADDITIONAL INFORMATION'
     ];
+
     let previousIndex = -1;
     for (const section of requiredSections) {
-        const index = cvMarkdown.indexOf(`## ${section}`);
-        if (index < 0) issues.push(`Missing section: ${section}`);
-        else if (index <= previousIndex) issues.push(`Section out of order: ${section}`);
-        previousIndex = Math.max(previousIndex, index);
+        const escaped = section.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const match = cvMarkdown.match(new RegExp(`^##+\\s+${escaped}\\b`, 'im'));
+        if (!match) {
+            issues.push(`Missing section: ${section}`);
+        } else {
+            const index = match.index;
+            if (index <= previousIndex) {
+                issues.push(`Section out of order: ${section}`);
+            }
+            previousIndex = Math.max(previousIndex, index);
+        }
     }
 
     const sectionText = (name, nextName) => {
-        const start = cvMarkdown.indexOf(`## ${name}`);
-        const end = nextName ? cvMarkdown.indexOf(`## ${nextName}`, start + 3) : cvMarkdown.length;
-        return start >= 0 ? cvMarkdown.slice(start, end > start ? end : cvMarkdown.length) : '';
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const match = cvMarkdown.match(new RegExp(`^##+\\s+${escaped}\\b`, 'im'));
+        if (!match) return '';
+        const start = match.index;
+        if (!nextName) return cvMarkdown.slice(start);
+        const nextEscaped = nextName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const rest = cvMarkdown.slice(start + match[0].length);
+        const nextMatch = rest.match(new RegExp(`^##+\\s+${nextEscaped}\\b`, 'im'));
+        if (!nextMatch) return cvMarkdown.slice(start);
+        return cvMarkdown.slice(start, start + match[0].length + nextMatch.index);
     };
+
     const experienceText = sectionText('PROFESSIONAL EXPERIENCE', 'KEY PROJECTS');
     const projectText = sectionText('KEY PROJECTS', 'VOLUNTEER EXPERIENCE');
     const volunteerText = sectionText('VOLUNTEER EXPERIENCE', 'EDUCATION');
@@ -1802,18 +1955,66 @@ function validateCVIntegrity(cvMarkdown, profile) {
 
     if (profile && typeof profile === 'object') {
         for (const role of profile.experience || []) {
-            if (!experienceText.includes(role.employer)) issues.push(`Missing professional employer: ${role.employer}`);
-            if (!experienceText.includes(role.role)) issues.push(`Missing professional role: ${role.role}`);
+            if (!role || typeof role !== 'object') continue;
+            const emp = role.employer;
+            if (emp) {
+                const hasEmp = containsEntity(experienceText, emp, [
+                    emp.replace(/,/g, ''),
+                    emp.split(',')[0].trim()
+                ]);
+                if (!hasEmp) issues.push(`Missing professional employer: ${emp}`);
+            }
+            const rTitle = role.role;
+            if (rTitle) {
+                const baseRole = rTitle.replace(/\s*\([^)]*\)/g, '').trim();
+                const hasRole = containsEntity(experienceText, rTitle, [
+                    baseRole,
+                    baseRole.replace(/[\/-]/g, ' ')
+                ]);
+                if (!hasRole) issues.push(`Missing professional role: ${rTitle}`);
+            }
         }
         for (const project of profile.projects || []) {
-            if (!projectText.includes(project.name)) issues.push(`Missing real project: ${project.name}`);
+            if (!project || typeof project !== 'object') continue;
+            const pName = project.name;
+            if (pName) {
+                const hasProject = containsEntity(projectText, pName, [
+                    pName.replace(/&/g, 'and'),
+                    pName.replace(/and/g, '&')
+                ]);
+                if (!hasProject) issues.push(`Missing real project: ${pName}`);
+            }
         }
         for (const item of profile.volunteer || []) {
-            if (!volunteerText.includes(item.organisation)) issues.push(`Missing volunteer organisation: ${item.organisation}`);
+            if (!item || typeof item !== 'object') continue;
+            const org = item.organisation || item.organization;
+            if (org) {
+                const hasOrg = containsEntity(volunteerText, org, [
+                    org.replace(/\.(org|com|net|io)\b/gi, '')
+                ]);
+                if (!hasOrg) issues.push(`Missing volunteer organisation: ${org}`);
+            }
         }
         for (const item of profile.education || []) {
-            if (!educationText.includes(item.institution)) issues.push(`Missing education institution: ${item.institution}`);
-            if (!educationText.includes(item.qualification)) issues.push(`Missing qualification: ${item.qualification}`);
+            if (!item || typeof item !== 'object') continue;
+            const inst = item.institution;
+            if (inst) {
+                const hasInst = containsEntity(educationText, inst, [
+                    inst.split(',')[0].trim(),
+                    inst.replace(/Institute of Technology/i, '').trim()
+                ]);
+                if (!hasInst) issues.push(`Missing education institution: ${inst}`);
+            }
+            const qual = item.qualification;
+            if (qual) {
+                const baseQual = qual.replace(/\s*\([^)]*\)/g, '').trim();
+                const hasQual = containsEntity(educationText, qual, [
+                    baseQual,
+                    baseQual.replace(/Masters/i, 'Master'),
+                    baseQual.replace(/Bachelors/i, 'Bachelor')
+                ]);
+                if (!hasQual) issues.push(`Missing qualification: ${qual}`);
+            }
         }
     }
 
@@ -1824,16 +2025,26 @@ function validateCVIntegrity(cvMarkdown, profile) {
         'University of AUT', 'AUT University', '**New:**'
     ];
     for (const flag of fabricationFlags) {
-        const re = new RegExp('\\b' + flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
+        const escaped = flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const leadingBoundary = /^\w/.test(flag) ? '\\b' : '';
+        const trailingBoundary = /\w$/.test(flag) ? '\\b' : '';
+        const re = new RegExp(leadingBoundary + escaped + trailingBoundary, 'i');
         if (re.test(cvMarkdown)) issues.push(`Fabricated content detected: "${flag}"`);
     }
+
     const additionalText = sectionText('ADDITIONAL INFORMATION');
-    if (!additionalText || !/Working rights:/i.test(additionalText) || !/Languages:/i.test(additionalText)) issues.push('ADDITIONAL INFORMATION is incomplete');
-    if (/\[\.\.\.truncated|\{\{|\}\}|\[insert|placeholder/i.test(cvMarkdown)) issues.push('Placeholder or truncation marker detected');
-    const words = cvMarkdown.trim().split(/\s+/).length;
+    if (!additionalText || !/Working rights:/i.test(additionalText) || !/Languages:/i.test(additionalText)) {
+        issues.push('ADDITIONAL INFORMATION is incomplete');
+    }
+    if (/\[\.\.\.truncated|\{\{|\}\}|\[insert|placeholder|<placeholder>|\[todo\]/i.test(cvMarkdown)) {
+        issues.push('Placeholder or truncation marker detected');
+    }
+
+    const words = cvMarkdown.trim().split(/\s+/).filter(Boolean).length;
     if (words < 750) issues.push(`CV is too sparse (${words} words)`);
     if (words > 1200) issues.push(`CV is too long (${words} words)`);
-    return { issues, ok: issues.length === 0 };
+
+    return { issues, ok: issues.length === 0, valid: issues.length === 0 };
 }
 
 // ---------------------------------------------------------------------------
@@ -1856,6 +2067,8 @@ class JobApplicationPipeline {
         const maxIterEnv = parseInt(process.env.JOB_PIPELINE_MAX_ITERATIONS || '', 10);
         this.maxIterations = Number.isFinite(maxIterEnv) && maxIterEnv >= 1 ? maxIterEnv : 5;
         this.skipAts = config.skipAts === true || /^(1|true|yes)$/i.test(process.env.JOB_PIPELINE_SKIP_ATS || '');
+        this.forceSync = config.forceSync === true || /^(1|true|yes)$/i.test(process.env.FORCE_SYNC || '');
+        this.skipSync = config.skipSync === true || /^(0|false|no)$/i.test(process.env.SYNC_PORTFOLIO_ON_RUN || '');
         this.atsMaxRetries = 2;
         this.createdFiles = new Set();
     }
@@ -1882,6 +2095,32 @@ class JobApplicationPipeline {
         return cleaned;
     }
 
+    async runPreflightSync() {
+        if (typeof aggregateProfiles === 'function' && (!this.skipSync || this.forceSync)) {
+            try {
+                log('Running preflight profile synchronization (portfolio + source CVs)...');
+                const syncResult = await aggregateProfiles({
+                    force: this.forceSync,
+                    save: true,
+                    cvsDir: this.myCvsDir,
+                    profilePath: path.join(this.workspaceRoot, 'candidate_profile.json'),
+                    backupPath: path.join(this.workspaceRoot, 'candidate_profile.backup.json')
+                });
+                const cvCount = syncResult.sources?.cvCount ?? (fs.existsSync(this.myCvsDir) ? fs.readdirSync(this.myCvsDir).filter(f => f.toLowerCase().endsWith('.pdf')).length : 0);
+                const portfolioStatus = syncResult.sources?.portfolioExtracted ? 'Live portfolio fetched' : 'Cached/offline portfolio loaded';
+                log(`[Profile Sync] ${portfolioStatus} | ${cvCount} source CVs parsed | Active profile updated`);
+                return { performed: true, syncResult };
+            } catch (syncErr) {
+                log(`[Profile Sync] Warning: Preflight profile sync failed (${syncErr.message}) — continuing with existing profile`);
+                return { performed: false, error: syncErr.message };
+            }
+        } else if (this.skipSync && !this.forceSync) {
+            log('[Profile Sync] Preflight profile sync skipped via configuration');
+            return { performed: false, skipped: true };
+        }
+        return { performed: false };
+    }
+
     async run() {
         log('='.repeat(60));
         log('Job Application Pipeline');
@@ -1896,6 +2135,9 @@ class JobApplicationPipeline {
 
         ensureDir(this.outputDir);
         ensureDir(this.myCvsDir);
+
+        // Preflight Profile Sync Hook (Phase 6 - Step 6.1)
+        await this.runPreflightSync();
 
         // Browser for scraping (closed immediately after scraping to keep memory low during LLM calls)
         let browser = await puppeteer.launch(getBrowserLaunchOptions());
@@ -2023,6 +2265,7 @@ class JobApplicationPipeline {
                         weakKeywords: atsResult.weakKeywords,
                         formattingIssues: atsResult.formattingIssues,
                         iteration,
+                        candidateProfile,
                     });
                 } catch (e) {
                     // LLM/transient failure here must NOT kill the run — keep best CV and still produce PDFs
@@ -2038,18 +2281,18 @@ Issues to fix:
 ${improvedIntegrity.issues.map((iss, i) => `${i + 1}. ${iss}`).join('\n')}
 
 Required verified facts:
-- Employers: Neurix Limited, Datacom NZ, Department of Education, Government of Delhi, Mitre10 MEGA
-- Key Projects: Nextcloud & Systems Learning Lab, Cloud Application Deployment, VPS, Hosting & Recovery Lab
-- Volunteer: FreeCodeCamp.org, Shoutcoder.com
-- Education: Unitec Institute of Technology, Maharaja Surajmal Institute
+- Employers: ${getEmployerNamesSummary(candidateProfile)}
+- Key Projects: ${getProjectNamesSummary(candidateProfile)}
+- Volunteer: ${getVolunteerNamesSummary(candidateProfile)}
+- Education: ${getEducationNamesSummary(candidateProfile)}
 - All 7 sections in order: PROFESSIONAL SUMMARY, TECHNICAL SKILLS, PROFESSIONAL EXPERIENCE, KEY PROJECTS, VOLUNTEER EXPERIENCE, EDUCATION, ADDITIONAL INFORMATION
 
 CV to fix:
 ${improved}
 
-Output ONLY the corrected Markdown CV starting with "# MAGHAV AHUJA".`;
+Output ONLY the corrected Markdown CV starting with "# ${candidateProfile?.name || 'MAGHAV AHUJA'}".`;
                     try {
-                        const repaired = await callLLM(repairPrompt, 'Output ONLY the corrected Markdown CV starting with "# MAGHAV AHUJA".', this.llmChain);
+                        const repaired = await callLLM(repairPrompt, `Output ONLY the corrected Markdown CV starting with "# ${candidateProfile?.name || 'MAGHAV AHUJA'}".`, this.llmChain);
                         const repairCheck = validateCVIntegrity(repaired, candidateProfile);
                         if (repairCheck.ok) {
                             log('✓ Improved CV self-repair succeeded');
@@ -2210,8 +2453,7 @@ Write 1 page (300-380 words), NZ English, date + Hiring Team + Re: + greeting + 
             // re-render the PDF so the file on disk matches the repaired markdown.
             {
                 const finalCheck = validateCVIntegrity(currentCV, candidateProfile);
-                if (finalCheck.issues.length > 0) throw new Error(`FINAL CV integrity gate failed: ${finalCheck.issues.join(' | ')}`);
-                if (false) {
+                if (finalCheck.issues.length > 0) {
                     log(`FINAL CV integrity check FAILED: ${finalCheck.issues.join(' | ')} — repairing`);
                     const repairPrompt = `Fix ONLY these issues in the CV below. Do NOT change anything else.
 
@@ -2219,19 +2461,18 @@ ISSUES:
 ${finalCheck.issues.map((s, i) => `${i + 1}. ${s}`).join('\n')}
 
 REQUIRED FACTS:
-- Employers: Neurix Limited, Datacom NZ, Department of Education Government of Delhi, Mitre10 MEGA
-- Volunteer: FreeCodeCamp.org (Staff Member), Shoutcoder.com (Technical Support Analyst)
-- Education: Unitec Institute of Technology — Master of Applied Technologies — Data Analysis (Level 9), Feb 2023 – July 2024
-- Education: Maharaja Surajmal Institute — Bachelor of Computer Applications, 2019 – 2022
+- Employers: ${getEmployerNamesSummary(candidateProfile)}
+- Volunteer: ${formatVerifiedVolunteer(candidateProfile)}
+- Education: ${(candidateProfile.education || []).map(e => `${e.institution} — ${e.qualification}, ${e.dates}`).join('\n- Education: ')}
 - All 7 sections in order: PROFESSIONAL SUMMARY, TECHNICAL SKILLS, PROFESSIONAL EXPERIENCE, KEY PROJECTS, VOLUNTEER EXPERIENCE, EDUCATION, ADDITIONAL INFORMATION
 
 CV:
 ${currentCV}
 
-Output ONLY the fixed CV in Markdown starting with "# MAGHAV AHUJA".`;
+Output ONLY the fixed CV in Markdown starting with "# ${candidateProfile?.name || 'MAGHAV AHUJA'}".`;
                     try {
-                        const repaired = await callLLM(repairPrompt, 'You are a meticulous CV fact-checker. Output only the corrected CV.', this.llmChain);
-                        if (validateCVIntegrity(repaired, mergedText).issues.length === 0) {
+                        const repaired = await callLLM(repairPrompt, `You are a meticulous CV fact-checker. Output only the corrected CV starting with "# ${candidateProfile?.name || 'MAGHAV AHUJA'}".`, this.llmChain);
+                        if (validateCVIntegrity(repaired, candidateProfile).issues.length === 0) {
                             currentCV = repaired;
                             log('FINAL CV integrity repair succeeded');
                         } else {
@@ -2245,10 +2486,10 @@ Output ONLY the fixed CV in Markdown starting with "# MAGHAV AHUJA".`;
                         // Bounded re-fit: up to 2 shorten passes, preserving all sections.
                         for (let fit = 0; fit < 2 && cvPdfResult.pages > 2; fit++) {
                             log(`Repaired CV is ${cvPdfResult.pages} pages — re-fitting to 2 pages (pass ${fit + 1}/2)`);
-                            const refitPrompt = `Shorten this CV to fit EXACTLY 2 full A4 pages at 7.5pt (currently ${cvPdfResult.pages} pages). Target 950-1000 words. Tighten bullets to 14-20 words each, trim filler from the PROFESSIONAL SUMMARY, but KEEP ALL SECTIONS (PROFESSIONAL SUMMARY, TECHNICAL SKILLS, PROFESSIONAL EXPERIENCE, KEY PROJECTS, VOLUNTEER EXPERIENCE, EDUCATION, ADDITIONAL INFORMATION) and ALL employers/schools exactly as listed. Output ONLY the shortened CV starting with "# MAGHAV AHUJA".\n\nCV:\n${currentCV}`;
+                            const refitPrompt = `Shorten this CV to fit EXACTLY 2 full A4 pages at 7.5pt (currently ${cvPdfResult.pages} pages). Target 950-1000 words. Tighten bullets to 14-20 words each, trim filler from the PROFESSIONAL SUMMARY, but KEEP ALL SECTIONS (PROFESSIONAL SUMMARY, TECHNICAL SKILLS, PROFESSIONAL EXPERIENCE, KEY PROJECTS, VOLUNTEER EXPERIENCE, EDUCATION, ADDITIONAL INFORMATION) and ALL employers/schools exactly as listed. Output ONLY the shortened CV starting with "# ${candidateProfile?.name || 'MAGHAV AHUJA'}".\n\nCV:\n${currentCV}`;
                             try {
-                                const refit = await callLLM(refitPrompt, 'You are a concise CV editor. Output only the CV.', this.llmChain);
-                                if (validateCVIntegrity(refit, mergedText).issues.length === 0) {
+                                const refit = await callLLM(refitPrompt, `You are a concise CV editor. Output only the CV starting with "# ${candidateProfile?.name || 'MAGHAV AHUJA'}".`, this.llmChain);
+                                if (validateCVIntegrity(refit, candidateProfile).issues.length === 0) {
                                     currentCV = refit;
                                 } else {
                                     log('Re-fit dropped sections — discarding re-fit, keeping previous version');
@@ -2352,6 +2593,9 @@ Output ONLY the fixed CV in Markdown starting with "# MAGHAV AHUJA".`;
                 companyName: jobInfo.companyName,
                 jobTitle: jobInfo.jobTitle,
                 atsScore: finalScore,
+                atsPassed: finalScore >= 85,
+                cvPdfPages: cvPdfResult.pages,
+                clPdfPages: clPdfResult.pages,
                 cvPdfPath: cvPdfResult.outputPath,
                 clPdfPath: clPdfResult.outputPath,
                 outputDir: this.outputDir,
@@ -2370,6 +2614,7 @@ module.exports._internals = {
     classifyJob,
     buildFactualApplicationDocuments,
     validateCVIntegrity,
+    containsEntity,
     cvMarkdownToHtml,
     coverLetterMarkdownToHtml,
     checkAtsScoreViaApi,
@@ -2386,23 +2631,39 @@ module.exports._internals = {
     getBrowserLaunchOptions,
     resolveAtsApiUrl,
     calculateLocalAtsScore,
+    formatVerifiedEmployers,
+    formatVerifiedProjects,
+    formatVerifiedEducation,
+    formatVerifiedVolunteer,
+    getEmployerNamesSummary,
+    getProjectNamesSummary,
+    getEducationNamesSummary,
+    getVolunteerNamesSummary,
+    improveCVWithReport,
 };
 
 // CLI entry when run directly
 if (require.main === module) {
-    const args = process.argv.slice(2);
+    const rawArgs = process.argv.slice(2);
+    const forceSync = rawArgs.includes('--force-sync') || rawArgs.includes('-f');
+    const skipSync = rawArgs.includes('--skip-sync');
+    const args = rawArgs.filter(a => !a.startsWith('--') && !a.startsWith('-'));
     const link = args[0];
     if (!link) {
-        console.log('Usage: node job_application_pipeline.js <job_link> [llm_api_key] [llm_model]');
+        console.log('Usage: node job_application_pipeline.js <job_link> [llm_api_key] [llm_model] [--force-sync] [--skip-sync]');
         console.log('  job_link: SEEK / LinkedIn / Indeed / TradeMe / any career URL');
         console.log('  llm_api_key: optional override (else uses LLM_API_KEY / .env provider chain)');
         console.log('  llm_model: optional override (else uses OPENROUTER_MODEL / GROQ_MODEL / NIM_MODEL)');
+        console.log('  --force-sync: force fresh portfolio scrape & re-parsing of CVs');
+        console.log('  --skip-sync: skip preflight profile synchronization');
         process.exit(1);
     }
     const pipeline = new JobApplicationPipeline({
         jobLink: link,
         llmApiKey: args[1] || undefined,
         llmModel: args[2] || undefined,
+        forceSync,
+        skipSync,
     });
     pipeline.run().then(r => {
         console.log('\nDone:', JSON.stringify(r, null, 2));

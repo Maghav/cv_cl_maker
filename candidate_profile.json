@@ -1,5 +1,6 @@
 {
-  "profileVersion": 1,
+  "profileVersion": 17,
+  "lastAggregated": "2026-09-20T08:53:18.177Z",
   "sourceFiles": [
     "my_cvs/cv_support_infrastructure.pdf",
     "my_cvs/cv_linux_devops.pdf"
@@ -23,52 +24,315 @@
     {
       "category": "Service Desk & Service Delivery",
       "text": "L1/L2 and remote support, ticket management, incident diagnosis, escalation, service documentation and multi-client support",
-      "tags": ["service desk", "help desk", "technical support", "ticket", "incident", "escalation", "customer service", "itil", "jira"]
+      "tags": [
+        "service desk",
+        "help desk",
+        "technical support",
+        "ticket",
+        "incident",
+        "escalation",
+        "customer service",
+        "itil",
+        "jira",
+        "help desk and remote technical support (l1 / l2)",
+        "ticket management",
+        "and service",
+        "delivery",
+        "client-focused support in multi-client environments",
+        "it operations",
+        "monitoring",
+        "and incident response",
+        "l1/l2",
+        "l1",
+        "l2",
+        "remote support",
+        "multi-client",
+        "service delivery",
+        "documentation"
+      ]
     },
     {
       "category": "Microsoft & Identity",
       "text": "Microsoft 365 (Exchange, Teams, SharePoint Online), Azure AD/Entra ID, user access, Power Automate and Active Directory tooling",
-      "tags": ["microsoft 365", "exchange", "teams", "sharepoint", "active directory", "entra id", "identity", "user access"]
+      "tags": [
+        "microsoft 365",
+        "exchange",
+        "teams",
+        "sharepoint",
+        "active directory",
+        "entra id",
+        "identity",
+        "user access",
+        "microsoft 365 (exchange",
+        "sharepoint online)",
+        "sharepoint collaboration and document",
+        "management",
+        "power automate (workflow automation)",
+        "azure ad / entra id",
+        "hybrid cloud and smb cloud environments",
+        "user",
+        "azure ad",
+        "access",
+        "azure",
+        "cloud",
+        "automation",
+        "workflow",
+        "power automate"
+      ]
     },
     {
       "category": "Windows & End-User Systems",
       "text": "Windows Server 2022, Windows 10/11, software and hardware support, printers, peripherals, asset records and device troubleshooting",
-      "tags": ["windows", "windows server", "hardware", "software", "printer", "asset", "device", "endpoint"]
+      "tags": [
+        "windows",
+        "windows server",
+        "hardware",
+        "software",
+        "printer",
+        "asset",
+        "device",
+        "endpoint",
+        "computer hardware assembly",
+        "server assembly and procurement",
+        "hardware fault diagnosis and repair",
+        "rack mounting",
+        "troubleshooting",
+        "peripherals",
+        "fault diagnosis",
+        "assembly",
+        "fault",
+        "server"
+      ]
     },
     {
       "category": "Networking & Infrastructure",
       "text": "LAN/WAN, VPN, Wi-Fi, DHCP, DNS, virtualisation, backup monitoring and infrastructure troubleshooting",
-      "tags": ["network", "networking", "lan", "wan", "vpn", "wifi", "dhcp", "dns", "infrastructure"]
+      "tags": [
+        "network",
+        "networking",
+        "lan",
+        "wan",
+        "vpn",
+        "wifi",
+        "dhcp",
+        "dns",
+        "infrastructure",
+        "nginx",
+        "apache",
+        "centos/rhel",
+        "ubuntu/debian",
+        "windows server 2019, 2022, 2025",
+        "suselinux",
+        "amazon web services - aws",
+        "microsoft azure",
+        "google cloud - gcp",
+        "oracle cloud infrastructure - oci",
+        "proxmox ve",
+        "grafana",
+        "prometheus",
+        "zabbix",
+        "elastic stack - elk",
+        "tailscale",
+        "opnsense",
+        "unifi",
+        "terraform — cloud resource provisioning and state management",
+        "windows server 2022",
+        "windows 10/11",
+        "networking: lan/wan",
+        "virtualisation and containerisation (docker)",
+        "backup awareness and monitoring",
+        "it documentation and asset tracking",
+        "troubleshooting",
+        "windows",
+        "windows server",
+        "asset",
+        "virtualisation",
+        "server",
+        "azure",
+        "aws",
+        "cloud",
+        "terraform",
+        "docker",
+        "monitoring",
+        "backup",
+        "documentation"
+      ]
     },
     {
       "category": "Linux & Web Hosting",
       "text": "Ubuntu, CentOS/RHEL/AlmaLinux, NGINX, cPanel/WHM, package management, custom deb/rpm builds and server administration",
-      "tags": ["linux", "ubuntu", "centos", "rhel", "nginx", "cpanel", "whm", "hosting", "server"]
+      "tags": [
+        "linux",
+        "ubuntu",
+        "centos",
+        "rhel",
+        "nginx",
+        "cpanel",
+        "whm",
+        "hosting",
+        "server",
+        "ubuntu linux",
+        "centos/rhel/almalinux",
+        "windows server",
+        "linux kernel administration",
+        "windows",
+        "package management",
+        "package"
+      ]
     },
     {
       "category": "Cloud & Virtual Machines",
       "text": "Azure and AWS, Azure Resource Manager and EC2 APIs, VM lifecycle management, VPS platforms and hybrid/SMB cloud environments",
-      "tags": ["azure", "aws", "cloud", "virtual machine", "vm", "ec2", "systems administration"]
+      "tags": [
+        "azure",
+        "aws",
+        "cloud",
+        "virtual machine",
+        "vm",
+        "ec2",
+        "systems administration",
+        "aws — vm provisioning and lifecycle management via apis (azure resource",
+        "manager",
+        "aws ec2 api)",
+        "vps"
+      ]
     },
     {
       "category": "Automation & Scripting",
       "text": "Python, Bash, PowerShell, YAML, Power Automate and n8n for deployment, administration, maintenance and workflow automation",
-      "tags": ["automation", "python", "bash", "powershell", "scripting", "workflow", "power automate", "n8n"]
+      "tags": [
+        "automation",
+        "python",
+        "bash",
+        "powershell",
+        "scripting",
+        "workflow",
+        "power automate",
+        "n8n",
+        "terraform",
+        "aws cloudfront",
+        "ansible",
+        "bash scripting",
+        "python scripting",
+        "selenium",
+        "openclaw",
+        "hermes agent",
+        "ollama",
+        "lm-studio",
+        "fine-tuning",
+        "langchain",
+        "langgraph",
+        "yaml — deployment automation",
+        "maintenance scripting",
+        "and server",
+        "programming",
+        "workflow automation using power automate and n8n",
+        "business systems integration",
+        "(clickup",
+        "trello",
+        "zoho)",
+        "python scripting for automation and admin tasks.",
+        "server",
+        "aws",
+        "yaml",
+        "deployment"
+      ]
     },
     {
       "category": "DevOps & Configuration",
       "text": "Azure DevOps, Buildbot, Jenkins, Terraform, Ansible, Docker and CI/CD pipeline support",
-      "tags": ["devops", "ci/cd", "azure devops", "buildbot", "jenkins", "terraform", "ansible", "docker"]
+      "tags": [
+        "devops",
+        "ci/cd",
+        "azure devops",
+        "buildbot",
+        "jenkins",
+        "terraform",
+        "ansible",
+        "docker",
+        "git",
+        "github actions",
+        "kubernetes",
+        "helm",
+        "microsoft sentinel",
+        "ssl/tls",
+        "reverse proxy",
+        "bastion host - oci bastion",
+        "vpn configuration",
+        "microsoft 365",
+        "nodejs",
+        "reactjs",
+        "next.js",
+        ".net framework",
+        "php scripts",
+        "mysql",
+        "postgressql",
+        "sql server",
+        "jenkins — ci/cd pipeline development and package build",
+        "automation",
+        "ansible — infrastructure as configuration",
+        "fleet-wide enforcement",
+        "nginx — load balancing",
+        "reverse proxy configuration",
+        "and ssl termination",
+        "compiling packages from source",
+        "creating custom debs and rpms",
+        "apt/yum repository management",
+        "vpn",
+        "infrastructure",
+        "nginx",
+        "package",
+        "server",
+        "azure",
+        "github",
+        "configuration",
+        "sql",
+        ".net"
+      ]
     },
     {
       "category": "Monitoring & Data",
       "text": "Zabbix, Prometheus, Grafana, PostgreSQL administration, alerting, backup verification and infrastructure observability",
-      "tags": ["monitoring", "observability", "zabbix", "prometheus", "grafana", "postgresql", "database", "backup"]
+      "tags": [
+        "monitoring",
+        "observability",
+        "zabbix",
+        "prometheus",
+        "grafana",
+        "postgresql",
+        "database",
+        "backup",
+        "postgresql — database administration",
+        "configuration",
+        "query optimisation",
+        "and maintenance",
+        "grafana — server monitoring",
+        "alerting",
+        "and infrastructure observability",
+        "infrastructure",
+        "server"
+      ]
     },
     {
       "category": "Hardware & Operations",
       "text": "Computer and server assembly, procurement, rack mounting, fault diagnosis, repair and production on-call support",
-      "tags": ["hardware", "operations", "repair", "fault", "on-call", "production support"]
+      "tags": [
+        "hardware",
+        "operations",
+        "repair",
+        "fault",
+        "on-call",
+        "production support",
+        "production on-call rotation in a production environment",
+        "incident triage",
+        "rapid fault resolution",
+        "under time pressure",
+        "incident",
+        "pressure",
+        "fault diagnosis",
+        "assembly",
+        "server"
+      ]
     }
   ],
   "experience": [
@@ -77,68 +341,310 @@
       "location": "Auckland, New Zealand",
       "role": "Systems/DevOps Engineer (Casual Contract)",
       "dates": "2025 - Present",
-      "dateNote": "Source CVs conflict between August and September 2025; month intentionally omitted.",
       "maxBullets": 7,
       "bullets": [
         {
           "text": "Deliver remote and on-site technical support for internal users and engineering teams across business systems, cloud services and IT operations.",
-          "tags": ["service desk", "technical support", "customer", "user", "incident"]
+          "tags": [
+            "service desk",
+            "technical support",
+            "customer",
+            "user",
+            "incident",
+            "teams",
+            "cloud"
+          ]
         },
         {
           "text": "Administer Windows Server, networking, VPN and user-access environments while maintaining clear configurations, procedures and support documentation.",
-          "tags": ["windows server", "networking", "vpn", "access", "documentation", "systems administration"]
+          "tags": [
+            "windows server",
+            "networking",
+            "vpn",
+            "access",
+            "documentation",
+            "systems administration",
+            "windows",
+            "server"
+          ]
         },
         {
           "text": "Manage Azure and AWS infrastructure, virtual machines and containerised systems, including ARM and EC2 API lifecycle tasks across 20+ VMs.",
-          "tags": ["azure", "aws", "cloud", "virtual machine", "container", "infrastructure"]
+          "tags": [
+            "azure",
+            "aws",
+            "cloud",
+            "virtual machine",
+            "container",
+            "infrastructure",
+            "ec2",
+            "arm",
+            "server",
+            "vms"
+          ]
         },
         {
           "text": "Administer 15+ Ubuntu and CentOS/RHEL servers with Ansible, applying consistent, version-controlled configuration across the fleet.",
-          "tags": ["linux", "ubuntu", "centos", "rhel", "ansible", "configuration"]
+          "tags": [
+            "linux",
+            "ubuntu",
+            "centos",
+            "rhel",
+            "ansible",
+            "configuration",
+            "server",
+            "configuration management"
+          ]
         },
         {
           "text": "Create Python and Bash automation for deployment, server configuration, maintenance and backups, reducing manual operational work by about 40%.",
-          "tags": ["python", "bash", "automation", "deployment", "backup", "continuous improvement"]
+          "tags": [
+            "python",
+            "bash",
+            "automation",
+            "deployment",
+            "backup",
+            "continuous improvement",
+            "server",
+            "configuration"
+          ]
         },
         {
           "text": "Participate in production on-call support, triaging Linux, infrastructure and hardware incidents with an average response time under 15 minutes.",
-          "tags": ["on-call", "incident", "troubleshooting", "linux", "hardware", "root cause"]
+          "tags": [
+            "on-call",
+            "incident",
+            "troubleshooting",
+            "linux",
+            "hardware",
+            "root cause",
+            "infrastructure",
+            "reliability"
+          ]
         },
         {
           "text": "Implement Zabbix monitoring and alerting for production servers, improving visibility and reducing mean time to detection by about 30%.",
-          "tags": ["zabbix", "monitoring", "alerting", "incident", "observability"]
+          "tags": [
+            "zabbix",
+            "monitoring",
+            "alerting",
+            "incident",
+            "observability"
+          ]
         },
         {
-          "text": "Use Terraform to manage production cloud resources and support resilient Azure, AWS, PaaS and Linux environments with 99.9% uptime targets.",
-          "tags": ["terraform", "azure", "aws", "cloud", "infrastructure", "devops"]
+          "text": "Manage and automate production cloud infrastructure across Azure and AWS using Terraform, supporting resilient PaaS and Linux server environments in a production environment with 99.9% uptime targets",
+          "tags": [
+            "terraform",
+            "azure",
+            "aws",
+            "cloud",
+            "infrastructure",
+            "devops",
+            "linux",
+            "paas",
+            "uptime",
+            "server"
+          ]
+        },
+        {
+          "text": "Troubleshoot complex Linux and infrastructure incidents, delivering timely resolution including computer hardware fault diagnosis and server hardware repair when physical servers are involved",
+          "tags": [
+            "hardware",
+            "fault diagnosis",
+            "fault",
+            "infrastructure",
+            "linux",
+            "server"
+          ]
+        },
+        {
+          "text": "Implement and maintain Zabbix monitoring for production server infrastructure, configuring alerts and dashboards that reduced mean-time-to-detection by approximately 30%",
+          "tags": [
+            "infrastructure",
+            "server",
+            "monitoring",
+            "zabbix"
+          ]
+        },
+        {
+          "text": "Administer Windows Server, networking, VPNs, and user access environments.",
+          "tags": [
+            "user",
+            "user access",
+            "access",
+            "windows",
+            "windows server",
+            "networking",
+            "server"
+          ]
+        },
+        {
+          "text": "Design and implement automation workflows to improve operational efficiency and outcomes.",
+          "tags": [
+            "automation"
+          ]
+        },
+        {
+          "text": "Maintain detailed IT documentation, configurations, and support procedures.",
+          "tags": [
+            "documentation"
+          ]
+        },
+        {
+          "text": "Setting up and supporting on-prem servers, and making best use of cloud services for deployment of projects.",
+          "tags": [
+            "cloud",
+            "deployment"
+          ]
+        },
+        {
+          "text": "The focus of the company remains more on IoT services, though leveraging cloud platforms like Azure and AWS for our jobs helps in achieving goals, I am honoured to be part of the company by providing support to have a hybdrid cloud environment.",
+          "tags": [
+            "azure",
+            "aws",
+            "cloud"
+          ]
+        },
+        {
+          "text": "Worked on migration of infrastructure from Rodney's office to Onehunga office (relocation).",
+          "tags": [
+            "infrastructure"
+          ]
+        },
+        {
+          "text": "Setup all the networks using UniFi, and IoT devices automation using HomeAssistant in the new office.",
+          "tags": [
+            "automation"
+          ]
+        },
+        {
+          "text": "Worked on servers setup including VPN server, NGINX, and web servers for website.",
+          "tags": [
+            "vpn",
+            "nginx",
+            "server"
+          ]
+        },
+        {
+          "text": "Provided technical support and worked on reliability and security to ensure everything stays up from 50% to over 90%.",
+          "tags": [
+            "technical support",
+            "reliability"
+          ]
+        },
+        {
+          "text": "Worked on containerised applications to reduce downtime.",
+          "tags": []
         }
-      ]
+      ],
+      "dateNote": "Source CVs conflict between August and September 2025; month intentionally omitted."
     },
     {
       "employer": "Datacom NZ",
       "location": "Auckland, New Zealand",
-      "role": "Intern",
+      "role": "Intern (Internship)",
       "dates": "April 2025 - June 2025",
-      "dateNote": "One source continues the internship to September 2025; the shorter confirmed period is used.",
       "maxBullets": 4,
       "bullets": [
         {
           "text": "Provided help desk and technical support in a large, multi-client enterprise environment with responsive user communication and service follow-through.",
-          "tags": ["help desk", "service desk", "technical support", "customer", "enterprise"]
+          "tags": [
+            "help desk",
+            "service desk",
+            "technical support",
+            "customer",
+            "enterprise",
+            "multi-client",
+            "user",
+            "communication"
+          ]
         },
         {
           "text": "Supported Microsoft 365, Azure DevOps and cloud-based systems, collaborating with senior engineers and service-delivery teams on escalations.",
-          "tags": ["microsoft 365", "azure devops", "cloud", "escalation", "collaboration"]
+          "tags": [
+            "microsoft 365",
+            "azure devops",
+            "cloud",
+            "escalation",
+            "collaboration",
+            "teams",
+            "azure",
+            "devops",
+            "service delivery"
+          ]
         },
         {
           "text": "Built and maintained clear client and internal documentation to support consistent handovers, troubleshooting and service quality.",
-          "tags": ["documentation", "knowledge base", "communication", "process", "service"]
+          "tags": [
+            "documentation",
+            "knowledge base",
+            "communication",
+            "process",
+            "service",
+            "troubleshooting"
+          ]
         },
         {
           "text": "Assisted Azure DevOps CI/CD work for .NET and React applications across three project teams, helping reduce deployment time by about 25%.",
-          "tags": ["azure devops", "ci/cd", "deployment", ".net", "react", "devops"]
+          "tags": [
+            "azure devops",
+            "ci/cd",
+            "deployment",
+            ".net",
+            "react",
+            "devops",
+            "teams",
+            "azure"
+          ]
+        },
+        {
+          "text": "Supported CI/CD pipeline development on Azure DevOps for .NET and React applications, streamlining automated deployments in a delivery-focused engineering environment and reducing deployment time by approximately 25%",
+          "tags": [
+            "azure",
+            "devops",
+            "ci/cd",
+            "azure devops",
+            "deployment",
+            "react",
+            ".net"
+          ]
+        },
+        {
+          "text": "Collaborated with senior engineers to improve deployment reliability, application performance, and development workflow practices across 3 project teams",
+          "tags": [
+            "reliability",
+            "teams",
+            "workflow",
+            "deployment"
+          ]
+        },
+        {
+          "text": "Ensured responsive communication and high service satisfaction.",
+          "tags": [
+            "communication"
+          ]
+        },
+        {
+          "text": "I joined as a Software engineer, and ended up being a DevOps Engineer.",
+          "tags": [
+            "software",
+            "devops"
+          ]
+        },
+        {
+          "text": "Learned Azure DevOps, .NET and Reactjs project deployments, software development cycle, and Azure Cloud",
+          "tags": [
+            "software",
+            "azure",
+            "cloud",
+            "devops",
+            "azure devops",
+            ".net"
+          ]
         }
-      ]
+      ],
+      "dateNote": "One source continues the internship to September 2025; the shorter confirmed period is used."
     },
     {
       "employer": "Department of Education, Government of Delhi",
@@ -149,15 +655,39 @@
       "bullets": [
         {
           "text": "Supported daily IT operations for staff and business systems, resolving user needs through friendly, clear and consistent service.",
-          "tags": ["it operations", "technical support", "user", "customer service", "education"]
+          "tags": [
+            "it operations",
+            "technical support",
+            "user",
+            "customer service",
+            "education"
+          ]
         },
         {
           "text": "Maintained asset registers, operating procedures and business documentation to keep support work accurate, visible and repeatable.",
-          "tags": ["asset", "documentation", "procedure", "process", "knowledge base"]
+          "tags": [
+            "asset",
+            "documentation",
+            "procedure",
+            "process",
+            "knowledge base"
+          ]
         },
         {
           "text": "Automated administrative workflows with Python and Active Directory tools, improving routine staff and system administration.",
-          "tags": ["python", "active directory", "automation", "workflow", "systems administration"]
+          "tags": [
+            "python",
+            "active directory",
+            "automation",
+            "workflow",
+            "systems administration"
+          ]
+        },
+        {
+          "text": "Delivered friendly, clear communication and consistent service quality.",
+          "tags": [
+            "communication"
+          ]
         }
       ]
     },
@@ -170,11 +700,477 @@
       "bullets": [
         {
           "text": "Maintain secure facility operations while demonstrating reliability, professionalism and clear communication in a customer-facing environment.",
-          "tags": ["customer service", "communication", "security", "operations", "reliability"]
+          "tags": [
+            "customer service",
+            "communication",
+            "security",
+            "operations",
+            "reliability"
+          ]
         },
         {
           "text": "Work calmly under pressure while sustaining service quality and continuing structured study of Azure, monitoring and DevOps tools.",
-          "tags": ["pressure", "service", "learning", "azure", "monitoring", "devops"]
+          "tags": [
+            "pressure",
+            "service",
+            "learning",
+            "azure",
+            "monitoring",
+            "devops"
+          ]
+        },
+        {
+          "text": "Maintained secure facility operations across a large retail site; continued self-directed study of Azure fundamentals, Zabbix monitoring, and DevOps tooling concurrently during shifts.",
+          "tags": [
+            "azure",
+            "devops",
+            "monitoring",
+            "zabbix"
+          ]
+        },
+        {
+          "text": "Built confidence working under pressure while maintaining service quality and values.",
+          "tags": [
+            "pressure"
+          ]
+        },
+        {
+          "text": "Weekend job to be busy during the weekends.",
+          "tags": []
+        }
+      ]
+    }
+  ],
+  "additionalExperience": [
+    {
+      "employer": "Woolworths New Zealand",
+      "location": "Auckland, New Zealand",
+      "role": "Fresh Food Assistant",
+      "dates": "March 2023 – December 2024",
+      "maxBullets": 2,
+      "bullets": [
+        {
+          "text": "Student Part Time Job",
+          "tags": []
+        }
+      ]
+    }
+  ],
+  "allExperience": [
+    {
+      "employer": "Neurix Limited",
+      "location": "Auckland, New Zealand",
+      "role": "Systems/DevOps Engineer (Casual Contract)",
+      "dates": "2025 - Present",
+      "maxBullets": 7,
+      "bullets": [
+        {
+          "text": "Deliver remote and on-site technical support for internal users and engineering teams across business systems, cloud services and IT operations.",
+          "tags": [
+            "service desk",
+            "technical support",
+            "customer",
+            "user",
+            "incident",
+            "teams",
+            "cloud"
+          ]
+        },
+        {
+          "text": "Administer Windows Server, networking, VPN and user-access environments while maintaining clear configurations, procedures and support documentation.",
+          "tags": [
+            "windows server",
+            "networking",
+            "vpn",
+            "access",
+            "documentation",
+            "systems administration",
+            "windows",
+            "server"
+          ]
+        },
+        {
+          "text": "Manage Azure and AWS infrastructure, virtual machines and containerised systems, including ARM and EC2 API lifecycle tasks across 20+ VMs.",
+          "tags": [
+            "azure",
+            "aws",
+            "cloud",
+            "virtual machine",
+            "container",
+            "infrastructure",
+            "ec2",
+            "arm",
+            "server",
+            "vms"
+          ]
+        },
+        {
+          "text": "Administer 15+ Ubuntu and CentOS/RHEL servers with Ansible, applying consistent, version-controlled configuration across the fleet.",
+          "tags": [
+            "linux",
+            "ubuntu",
+            "centos",
+            "rhel",
+            "ansible",
+            "configuration",
+            "server",
+            "configuration management"
+          ]
+        },
+        {
+          "text": "Create Python and Bash automation for deployment, server configuration, maintenance and backups, reducing manual operational work by about 40%.",
+          "tags": [
+            "python",
+            "bash",
+            "automation",
+            "deployment",
+            "backup",
+            "continuous improvement",
+            "server",
+            "configuration"
+          ]
+        },
+        {
+          "text": "Participate in production on-call support, triaging Linux, infrastructure and hardware incidents with an average response time under 15 minutes.",
+          "tags": [
+            "on-call",
+            "incident",
+            "troubleshooting",
+            "linux",
+            "hardware",
+            "root cause",
+            "infrastructure",
+            "reliability"
+          ]
+        },
+        {
+          "text": "Implement Zabbix monitoring and alerting for production servers, improving visibility and reducing mean time to detection by about 30%.",
+          "tags": [
+            "zabbix",
+            "monitoring",
+            "alerting",
+            "incident",
+            "observability"
+          ]
+        },
+        {
+          "text": "Manage and automate production cloud infrastructure across Azure and AWS using Terraform, supporting resilient PaaS and Linux server environments in a production environment with 99.9% uptime targets",
+          "tags": [
+            "terraform",
+            "azure",
+            "aws",
+            "cloud",
+            "infrastructure",
+            "devops",
+            "linux",
+            "paas",
+            "uptime",
+            "server"
+          ]
+        },
+        {
+          "text": "Troubleshoot complex Linux and infrastructure incidents, delivering timely resolution including computer hardware fault diagnosis and server hardware repair when physical servers are involved",
+          "tags": [
+            "hardware",
+            "fault diagnosis",
+            "fault",
+            "infrastructure",
+            "linux",
+            "server"
+          ]
+        },
+        {
+          "text": "Implement and maintain Zabbix monitoring for production server infrastructure, configuring alerts and dashboards that reduced mean-time-to-detection by approximately 30%",
+          "tags": [
+            "infrastructure",
+            "server",
+            "monitoring",
+            "zabbix"
+          ]
+        },
+        {
+          "text": "Administer Windows Server, networking, VPNs, and user access environments.",
+          "tags": [
+            "user",
+            "user access",
+            "access",
+            "windows",
+            "windows server",
+            "networking",
+            "server"
+          ]
+        },
+        {
+          "text": "Design and implement automation workflows to improve operational efficiency and outcomes.",
+          "tags": [
+            "automation"
+          ]
+        },
+        {
+          "text": "Maintain detailed IT documentation, configurations, and support procedures.",
+          "tags": [
+            "documentation"
+          ]
+        },
+        {
+          "text": "Setting up and supporting on-prem servers, and making best use of cloud services for deployment of projects.",
+          "tags": [
+            "cloud",
+            "deployment"
+          ]
+        },
+        {
+          "text": "The focus of the company remains more on IoT services, though leveraging cloud platforms like Azure and AWS for our jobs helps in achieving goals, I am honoured to be part of the company by providing support to have a hybdrid cloud environment.",
+          "tags": [
+            "azure",
+            "aws",
+            "cloud"
+          ]
+        },
+        {
+          "text": "Worked on migration of infrastructure from Rodney's office to Onehunga office (relocation).",
+          "tags": [
+            "infrastructure"
+          ]
+        },
+        {
+          "text": "Setup all the networks using UniFi, and IoT devices automation using HomeAssistant in the new office.",
+          "tags": [
+            "automation"
+          ]
+        },
+        {
+          "text": "Worked on servers setup including VPN server, NGINX, and web servers for website.",
+          "tags": [
+            "vpn",
+            "nginx",
+            "server"
+          ]
+        },
+        {
+          "text": "Provided technical support and worked on reliability and security to ensure everything stays up from 50% to over 90%.",
+          "tags": [
+            "technical support",
+            "reliability"
+          ]
+        },
+        {
+          "text": "Worked on containerised applications to reduce downtime.",
+          "tags": []
+        }
+      ],
+      "dateNote": "Source CVs conflict between August and September 2025; month intentionally omitted."
+    },
+    {
+      "employer": "Datacom NZ",
+      "location": "Auckland, New Zealand",
+      "role": "Intern (Internship)",
+      "dates": "April 2025 - June 2025",
+      "maxBullets": 4,
+      "bullets": [
+        {
+          "text": "Provided help desk and technical support in a large, multi-client enterprise environment with responsive user communication and service follow-through.",
+          "tags": [
+            "help desk",
+            "service desk",
+            "technical support",
+            "customer",
+            "enterprise",
+            "multi-client",
+            "user",
+            "communication"
+          ]
+        },
+        {
+          "text": "Supported Microsoft 365, Azure DevOps and cloud-based systems, collaborating with senior engineers and service-delivery teams on escalations.",
+          "tags": [
+            "microsoft 365",
+            "azure devops",
+            "cloud",
+            "escalation",
+            "collaboration",
+            "teams",
+            "azure",
+            "devops",
+            "service delivery"
+          ]
+        },
+        {
+          "text": "Built and maintained clear client and internal documentation to support consistent handovers, troubleshooting and service quality.",
+          "tags": [
+            "documentation",
+            "knowledge base",
+            "communication",
+            "process",
+            "service",
+            "troubleshooting"
+          ]
+        },
+        {
+          "text": "Assisted Azure DevOps CI/CD work for .NET and React applications across three project teams, helping reduce deployment time by about 25%.",
+          "tags": [
+            "azure devops",
+            "ci/cd",
+            "deployment",
+            ".net",
+            "react",
+            "devops",
+            "teams",
+            "azure"
+          ]
+        },
+        {
+          "text": "Supported CI/CD pipeline development on Azure DevOps for .NET and React applications, streamlining automated deployments in a delivery-focused engineering environment and reducing deployment time by approximately 25%",
+          "tags": [
+            "azure",
+            "devops",
+            "ci/cd",
+            "azure devops",
+            "deployment",
+            "react",
+            ".net"
+          ]
+        },
+        {
+          "text": "Collaborated with senior engineers to improve deployment reliability, application performance, and development workflow practices across 3 project teams",
+          "tags": [
+            "reliability",
+            "teams",
+            "workflow",
+            "deployment"
+          ]
+        },
+        {
+          "text": "Ensured responsive communication and high service satisfaction.",
+          "tags": [
+            "communication"
+          ]
+        },
+        {
+          "text": "I joined as a Software engineer, and ended up being a DevOps Engineer.",
+          "tags": [
+            "software",
+            "devops"
+          ]
+        },
+        {
+          "text": "Learned Azure DevOps, .NET and Reactjs project deployments, software development cycle, and Azure Cloud",
+          "tags": [
+            "software",
+            "azure",
+            "cloud",
+            "devops",
+            "azure devops",
+            ".net"
+          ]
+        }
+      ],
+      "dateNote": "One source continues the internship to September 2025; the shorter confirmed period is used."
+    },
+    {
+      "employer": "Department of Education, Government of Delhi",
+      "location": "New Delhi, India",
+      "role": "Graduate Support Specialist",
+      "dates": "September 2022 - January 2023",
+      "maxBullets": 3,
+      "bullets": [
+        {
+          "text": "Supported daily IT operations for staff and business systems, resolving user needs through friendly, clear and consistent service.",
+          "tags": [
+            "it operations",
+            "technical support",
+            "user",
+            "customer service",
+            "education"
+          ]
+        },
+        {
+          "text": "Maintained asset registers, operating procedures and business documentation to keep support work accurate, visible and repeatable.",
+          "tags": [
+            "asset",
+            "documentation",
+            "procedure",
+            "process",
+            "knowledge base"
+          ]
+        },
+        {
+          "text": "Automated administrative workflows with Python and Active Directory tools, improving routine staff and system administration.",
+          "tags": [
+            "python",
+            "active directory",
+            "automation",
+            "workflow",
+            "systems administration"
+          ]
+        },
+        {
+          "text": "Delivered friendly, clear communication and consistent service quality.",
+          "tags": [
+            "communication"
+          ]
+        }
+      ]
+    },
+    {
+      "employer": "Mitre10 MEGA",
+      "location": "Auckland, New Zealand",
+      "role": "Security Team Member",
+      "dates": "August 2025 - Present",
+      "maxBullets": 2,
+      "bullets": [
+        {
+          "text": "Maintain secure facility operations while demonstrating reliability, professionalism and clear communication in a customer-facing environment.",
+          "tags": [
+            "customer service",
+            "communication",
+            "security",
+            "operations",
+            "reliability"
+          ]
+        },
+        {
+          "text": "Work calmly under pressure while sustaining service quality and continuing structured study of Azure, monitoring and DevOps tools.",
+          "tags": [
+            "pressure",
+            "service",
+            "learning",
+            "azure",
+            "monitoring",
+            "devops"
+          ]
+        },
+        {
+          "text": "Maintained secure facility operations across a large retail site; continued self-directed study of Azure fundamentals, Zabbix monitoring, and DevOps tooling concurrently during shifts.",
+          "tags": [
+            "azure",
+            "devops",
+            "monitoring",
+            "zabbix"
+          ]
+        },
+        {
+          "text": "Built confidence working under pressure while maintaining service quality and values.",
+          "tags": [
+            "pressure"
+          ]
+        },
+        {
+          "text": "Weekend job to be busy during the weekends.",
+          "tags": []
+        }
+      ]
+    },
+    {
+      "employer": "Woolworths New Zealand",
+      "location": "Auckland, New Zealand",
+      "role": "Fresh Food Assistant",
+      "dates": "March 2023 – December 2024",
+      "maxBullets": 2,
+      "bullets": [
+        {
+          "text": "Student Part Time Job",
+          "tags": []
         }
       ]
     }
@@ -183,26 +1179,98 @@
     {
       "name": "Cloud Application Deployment",
       "bullets": [
-        "Deploy existing Next.js, React, .NET, Java and Node.js applications to Azure and AWS while learning cloud-native deployment and automation services.",
-        "Completed a technical assignment deploying a Next.js dashboard to AWS Amplify and deployed WordPress sites through cPanel-based hosting."
+        "Deployed production-grade web applications (Next.js, .NET, Node.js) to Azure and AWS using cloud-native automation services and API-driven provisioning in a production environment, achieving deployment times under 10 minutes end-to-end.",
+        "Completed a technical assignment deploying a Next.js dashboard to AWS Amplify and deployed WordPress sites through cPanel-based hosting.",
+        "I’ve started deploying existing projects developed using Next.js, React, .NET, Java, Node.js, on AWS and Azure cloud using their free tiers."
       ],
-      "tags": ["azure", "aws", "deployment", "cloud", "next.js", "react", ".net", "java", "node.js", "wordpress"]
+      "tags": [
+        "azure",
+        "aws",
+        "deployment",
+        "cloud",
+        "next.js",
+        "react",
+        ".net",
+        "java",
+        "node.js",
+        "wordpress",
+        "cpanel",
+        "web hosting",
+        "hosting",
+        "amplify",
+        "automation",
+        "workflow",
+        "learning"
+      ]
     },
     {
       "name": "VPS, Hosting & Recovery Lab",
       "bullets": [
         "Configure Contabo VPS servers, Azure VMs and EC2 instances with Linux tools, hosting control panels and Bash automation for routine administration.",
-        "Compile packages from source, create custom deb packages and build Python/Bash backup workflows for repeatable server maintenance and recovery practice."
+        "Compile packages from source, create custom deb packages and build Python/Bash backup workflows for repeatable server maintenance and recovery practice.",
+        "Configured and maintained Azure VMs and VPS servers; compiled software packages from source and created custom debs for deployment to Ubuntu servers, reducing installation time by approximately 60%."
       ],
-      "tags": ["vps", "azure", "aws", "ec2", "linux", "bash", "hosting", "backup", "recovery", "package"]
+      "tags": [
+        "vps",
+        "azure",
+        "aws",
+        "ec2",
+        "linux",
+        "bash",
+        "hosting",
+        "backup",
+        "recovery",
+        "package",
+        "software",
+        "ubuntu",
+        "web hosting",
+        "deb",
+        "server",
+        "vms",
+        "contabo",
+        "automation",
+        "python",
+        "deployment",
+        "wordpress"
+      ]
     },
     {
       "name": "Nextcloud & Systems Learning Lab",
       "bullets": [
         "Deployed Nextcloud Files and Office as an on-premises Microsoft 365 alternative and explored enterprise identity and private-cloud integration patterns.",
-        "Complete hands-on KodeKloud, SadServers and LabEx scenarios using Terraform, Ansible, Jenkins, Docker, Kubernetes, Prometheus, Grafana and Linux troubleshooting."
+        "Complete hands-on KodeKloud, SadServers and LabEx scenarios using Terraform, Ansible, Jenkins, Docker, Kubernetes, Prometheus, Grafana and Linux troubleshooting.",
+        "Completing 100-day DevOps engineering challenge on KodeKloud Engineer platform; daily Linux troubleshooting and server administration practice on sadservers.com, solving 50+ real-world scenarios."
       ],
-      "tags": ["nextcloud", "microsoft 365", "identity", "learning", "terraform", "ansible", "jenkins", "docker", "kubernetes", "prometheus", "grafana"]
+      "tags": [
+        "nextcloud",
+        "microsoft 365",
+        "identity",
+        "learning",
+        "terraform",
+        "ansible",
+        "jenkins",
+        "docker",
+        "kubernetes",
+        "prometheus",
+        "grafana",
+        "troubleshooting",
+        "on-call",
+        "enterprise",
+        "infrastructure",
+        "linux",
+        "centos",
+        "server",
+        "azure",
+        "cloud",
+        "automation",
+        "python",
+        "devops",
+        "ci/cd",
+        "configuration",
+        "deployment",
+        "monitoring",
+        "zabbix"
+      ]
     }
   ],
   "volunteer": [
@@ -221,14 +1289,14 @@
     {
       "institution": "Unitec Institute of Technology",
       "location": "Auckland, New Zealand",
-      "qualification": "Master of Applied Technologies - Data Analysis (Level 9)",
+      "qualification": "Masters of Applied Technologies (Data Analysis) (Level 9)",
       "dates": "February 2023 - July 2024",
       "bullet": "Provided volunteer campus IT support for computers, printers, networking peripherals, software and user environments across 300+ requests."
     },
     {
       "institution": "Maharaja Surajmal Institute",
       "location": "New Delhi, India",
-      "qualification": "Bachelor of Computer Applications",
+      "qualification": "Bachelors in Computer Applications",
       "dates": "2019 - 2022",
       "bullet": "Built foundations in Python, JavaScript, Linux, AWS and Bash through web, deployment and Windows/Linux automation projects."
     }

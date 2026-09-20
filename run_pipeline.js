@@ -14,22 +14,33 @@
 const JobApplicationPipeline = require('./job_application_pipeline');
 
 async function main() {
-    const args = process.argv.slice(2);
-    if (!args[0] || args[0] === '--help' || args[0] === '-h') {
-        console.log('Usage: node run_pipeline.js <job_link> [llm_api_key] [llm_model] [llm_base_url]');
+    const rawArgs = process.argv.slice(2);
+    if (!rawArgs[0] || rawArgs.includes('--help') || rawArgs.includes('-h')) {
+        console.log('Usage: node run_pipeline.js <job_link> [llm_api_key] [llm_model] [llm_base_url] [--force-sync] [--skip-sync]');
         console.log('');
         console.log('  job_link:     SEEK / LinkedIn / Indeed / TradeMe / any career URL');
         console.log('  llm_api_key:  optional override (else uses LLM_API_KEY / .env provider chain)');
         console.log('  llm_model:    optional override (else uses LLM_MODEL / .env provider chain)');
         console.log('  llm_base_url: optional override (else uses LLM_BASE_URL / .env provider chain)');
+        console.log('  --force-sync: force fresh live portfolio scrape & CV PDF re-parsing');
+        console.log('  --skip-sync:  skip preflight profile synchronization');
         console.log('');
         console.log('Examples:');
         console.log('  node run_pipeline.js "https://www.seek.co.nz/job/94121243"');
+        console.log('  node run_pipeline.js "https://www.seek.co.nz/job/94121243" --force-sync');
         console.log('  node run_pipeline.js "https://www.seek.co.nz/job/94121243" "gsk_xxx" "openai/gpt-oss-120b"');
-        process.exit(args[0] ? 0 : 1);
+        process.exit(rawArgs[0] ? 0 : 1);
     }
 
-    const [jobLink, llmApiKey, llmModel, llmBaseUrl] = args;
+    const forceSync = rawArgs.includes('--force-sync') || rawArgs.includes('-f');
+    const skipSync = rawArgs.includes('--skip-sync');
+    const positional = rawArgs.filter(a => !a.startsWith('--') && !a.startsWith('-'));
+    const [jobLink, llmApiKey, llmModel, llmBaseUrl] = positional;
+
+    if (!jobLink) {
+        console.error('Error: Job link URL is required.');
+        process.exit(1);
+    }
 
     try { new URL(jobLink); } catch {
         console.error(`Invalid URL: ${jobLink}`);
@@ -41,6 +52,8 @@ async function main() {
         llmApiKey: llmApiKey || undefined,
         llmModel: llmModel || undefined,
         llmBaseUrl: llmBaseUrl || undefined,
+        forceSync,
+        skipSync,
     });
 
     try {

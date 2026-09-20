@@ -72,6 +72,11 @@
         </div>
       </details>
 
+      <div style="margin-top:14px;display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" id="forceSync" name="forceSync" style="width:auto;cursor:pointer;">
+        <label for="forceSync" style="margin:0;font-size:12px;cursor:pointer;color:var(--text);font-weight:normal;">🔄 Force live portfolio &amp; CV re-sync before run</label>
+      </div>
+
       <button type="submit" id="submitBtn">🚀 Start Pipeline</button>
     </form>
 
@@ -106,7 +111,12 @@ async function loadCvs() {
       el.innerHTML = '⚠️ No PDFs found in <code>my_cvs/</code>. Add 2–3 CV PDFs there — the pipeline merges <strong>all</strong> of them into one new CV.';
       el.style.borderColor = '#7f1d1d';
     } else {
-      el.innerHTML = `✅ <strong>${j.cvs.length} CV(s) detected</strong> (will be merged into one new CV):<br>` + j.cvs.map(c=>`• ${c.name} (${(c.size/1024).toFixed(0)} KB)`).join('<br>');
+      let html = `✅ <strong>${j.cvs.length} CV(s) detected</strong> (will be merged into one new CV):<br>` + j.cvs.map(c=>`• ${c.name} (${(c.size/1024).toFixed(0)} KB)`).join('<br>');
+      if (j.profile) {
+        const syncDate = j.profile.lastAggregated ? new Date(j.profile.lastAggregated).toLocaleString() : 'Never';
+        html += `<br><span style="display:inline-block;margin-top:6px;font-size:11px;color:#94a3b8;">🔄 <strong>Profile Sync:</strong> ${syncDate} &nbsp;|&nbsp; 🏢 ${j.profile.employerCount} Employers &nbsp;|&nbsp; 🚀 ${j.profile.projectCount} Projects</span>`;
+      }
+      el.innerHTML = html;
       el.style.borderColor = '#14532d';
     }
   } catch(e) {
@@ -159,6 +169,7 @@ form.addEventListener('submit', async (e) => {
 
   const payload = {
     jobLink,
+    forceSync: document.getElementById('forceSync') ? document.getElementById('forceSync').checked : false,
     llmApiKey: document.getElementById('llmApiKey').value.trim() || undefined,
     llmModel: document.getElementById('llmModel').value.trim() || undefined,
     llmBaseUrl: document.getElementById('llmBaseUrl').value.trim() || undefined,

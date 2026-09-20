@@ -65,7 +65,7 @@ app.get('/', (req, res) => {
 // ---------------------------------------------------------------------------
 // Pipeline starter (shared by form + direct API)
 // ---------------------------------------------------------------------------
-function startPipeline(jobLink, llmOverrides = {}, extraEnv = {}) {
+function startPipeline(jobLink, llmOverrides = {}, extraEnv = {}, options = {}) {
     const workflowId = `wf_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
     const env = {
@@ -92,6 +92,8 @@ function startPipeline(jobLink, llmOverrides = {}, extraEnv = {}) {
     if (llmOverrides.llmApiKey) args.push(llmOverrides.llmApiKey);
     if (llmOverrides.llmModel) args.push(llmOverrides.llmModel);
     if (llmOverrides.llmBaseUrl) args.push(llmOverrides.llmBaseUrl);
+    if (options.forceSync) args.push('--force-sync');
+    if (options.skipSync) args.push('--skip-sync');
 
     const child = spawn('node', args, { cwd: WORKSPACE_ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
 
@@ -145,13 +147,18 @@ function startPipeline(jobLink, llmOverrides = {}, extraEnv = {}) {
 // REST endpoints
 // ---------------------------------------------------------------------------
 app.post('/api/start-pipeline', (req, res) => {
-    const { jobLink, llmApiKey, llmModel, llmBaseUrl } = req.body || {};
+    const { jobLink, llmApiKey, llmModel, llmBaseUrl, forceSync, skipSync } = req.body || {};
     if (!jobLink || typeof jobLink !== 'string' || !jobLink.trim()) {
         return res.status(400).json({ success: false, error: 'jobLink is required' });
     }
     try { new URL(jobLink); } catch { return res.status(400).json({ success: false, error: 'Invalid URL' }); }
 
-    const { workflowId, error } = startPipeline(jobLink.trim(), { llmApiKey, llmModel, llmBaseUrl });
+    const { workflowId, error } = startPipeline(
+        jobLink.trim(),
+        { llmApiKey, llmModel, llmBaseUrl },
+        {},
+        { forceSync: Boolean(forceSync), skipSync: Boolean(skipSync) }
+    );
     if (error) return res.status(400).json({ success: false, error });
 
     res.json({ success: true, workflowId, jobLink: jobLink.trim(), estimatedTime: '2-5 minutes', message: 'Pipeline started' });
@@ -197,12 +204,43 @@ app.get('/api/output-files', (req, res) => {
 
 app.get('/api/cvs', (req, res) => {
     try {
-        if (!fs.existsSync(MY_CVS_DIR)) return res.json({ cvs: [] });
-        const cvs = fs.readdirSync(MY_CVS_DIR).filter(f => f.toLowerCase().endsWith('.pdf')).map(name => {
+        const cvFiles = fs.existsSync(MY_CVS_DIR) ? fs.readdirSync(MY_CVS_DIR).filter(f => f.toLowerCase().endsWith('.pdf')) : [];
+        const cvs = cvFiles.map(name => {
             const st = fs.statSync(path.join(MY_CVS_DIR, name));
             return { name, size: st.size, modified: st.mtime };
         });
-        res.json({ cvs });
+
+        // Read candidate_profile.json metadata if available
+        let profileMeta = null;
+        const profilePath = path.join(WORKSPACE_ROOT, 'candidate_profile.json');
+        if (fs.existsSync(profilePath)) {
+            try {
+                const p = JSON.parse(fs.readFileSync(profilePath, 'utf8'));
+                profileMeta = {
+                    lastAggregated: p.lastAggregated || null,
+                    profileVersion: p.profileVersion || 1,
+                    employerCount: p.experience ? p.experience.length : 0,
+                    projectCount: p.projects ? p.projects.length : 0,
+                    skillsCount: p.skills ? p.skills.length : 0,
+                    sourceFiles: p.sourceFiles || []
+                };
+            } catch (_) {}
+        }
+
+        // Read portfolio cache info
+        let cacheMeta = null;
+        const cachePath = path.join(WORKSPACE_ROOT, 'portfolio_cache.json');
+        if (fs.existsSync(cachePath)) {
+            try {
+                const c = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+                cacheMeta = {
+                    timestamp: c.timestamp || null,
+                    url: c.url || 'https://portfolio.onl9.club'
+                };
+            } catch (_) {}
+        }
+
+        res.json({ cvs, profile: profileMeta, portfolioCache: cacheMeta });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -217,16 +255,18 @@ app.get('/api/download/:filename', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-app.listen(PORT, () => {
-    console.log(`Job Application Pipeline server on http://localhost:${PORT}`);
-    console.log(`  Form:     http://localhost:${PORT}/`);
-    console.log(`  Health:   http://localhost:${PORT}/health`);
-    console.log(`  Workspace: ${WORKSPACE_ROOT}`);
-    console.log(`  CVs:       ${MY_CVS_DIR}`);
-    console.log(`  Output:    ${OUTPUT_DIR}`);
-    try {
-        const cvs = fs.existsSync(MY_CVS_DIR) ? fs.readdirSync(MY_CVS_DIR).filter(f => f.toLowerCase().endsWith('.pdf')) : [];
-        console.log(`  CVs found: ${cvs.length} — ${cvs.join(', ') || '(none — add PDFs to my_cvs/)'}`);
-    } catch (_) {}
-});
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`Job Application Pipeline server on http://localhost:${PORT}`);
+        console.log(`  Form:     http://localhost:${PORT}/`);
+        console.log(`  Health:   http://localhost:${PORT}/health`);
+        console.log(`  Workspace: ${WORKSPACE_ROOT}`);
+        console.log(`  CVs:       ${MY_CVS_DIR}`);
+        console.log(`  Output:    ${OUTPUT_DIR}`);
+        try {
+            const cvs = fs.existsSync(MY_CVS_DIR) ? fs.readdirSync(MY_CVS_DIR).filter(f => f.toLowerCase().endsWith('.pdf')) : [];
+            console.log(`  CVs found: ${cvs.length} — ${cvs.join(', ') || '(none — add PDFs to my_cvs/)'}`);
+        } catch (_) {}
+    });
+}
 module.exports = app;

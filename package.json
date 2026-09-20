@@ -1,4 +1,9 @@
 {
+  "scripts": {
+    "start": "node server.js",
+    "test": "node tests/dynamic_sync_test.js && node tests/workflow_smoke_test.js && node tests/pdf_rendering_test.js && node tests/test_notion_sync.js",
+    "test:e2e": "node tests/e2e_pipeline_test.js"
+  },
   "dependencies": {
     "cors": "^2.8.6",
     "express": "^5.2.1",
