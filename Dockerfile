@@ -1,4 +1,4 @@
-﻿FROM node:20-bookworm-slim
+FROM node:20-bookworm-slim
 
 # Install latest Chromium and required fonts for Puppeteer PDF rendering
 RUN apt-get update && apt-get install -y \
@@ -29,6 +29,9 @@ COPY . .
 
 # Ensure output and my_cvs directories exist
 RUN mkdir -p output my_cvs
+
+# Verify production readiness
+RUN npm run build
 
 EXPOSE 3000
 
