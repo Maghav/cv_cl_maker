@@ -10,7 +10,7 @@ Paste a job link → get an ATS-optimised 2-page CV + 1-page cover letter, autom
 3. Extract text from **all** PDFs in `my_cvs/` and **merge into ONE new CV** (uses candidate profile for factual integrity)
 4. LLM generates a new ATS-friendly CV + cover letter tailored to the JD (multi-provider fallback: OpenRouter, Groq, NVIDIA NIM, OpenAI)
 5. Check ATS score via the **ats.onl9.club API** (POSTs CV text + JD to `/api/v1/analyze`, reads score + keyword gaps)
-6. If score < 85 → LLM improves CV using the keyword report → re-check (up to 3 iterations, keeps best)
+6. If score < 80 (`ATS_TARGET_SCORE`, default 80) → LLM improves CV using the keyword report → re-check (keeps best)
 7. Generate PDFs with enforced page limits: **CV = 2 FULL pages** (content fill measured, ≥92% of both pages), **Cover letter = 1 page** (verified via `pdf-parse`)
 8. Save to `output/` + **automatic Notion sync** (uploads CV & Cover Letter PDFs to your Notion database) + automatic cleanup
 
@@ -151,15 +151,35 @@ node run_pipeline.js "https://www.seek.co.nz/job/94121243" --apply
 After the pipeline generates the CV + cover letter PDFs, it can **pre-fill the job's online application form** for you — closing the last manual gap (generate → apply) while keeping a human in the loop.
 
 ### How it works
-1. A **visible (non-headless) browser** opens at the job posting (Workday, Greenhouse, Lever, SEEK, or generic career sites).
+1. A **visible (non-headless) browser** opens at the job posting (Workday, Greenhouse, Lever, SEEK, SAP SuccessFactors, or generic career sites).
 2. Form fields are matched by label/name/id/placeholder/aria-label and filled from `candidate_profile.json` (name, email, phone, location, LinkedIn, GitHub).
 3. The generated CV PDF goes to the first resume upload slot; the cover letter PDF to a second slot (or any upload field labelled "cover letter"). The cover letter text (markdown stripped to plain text) is pasted into cover-letter/message textareas.
 4. A screenshot of the filled state is saved to `output/autofill_state.png`.
 5. **It stops there.** You review the open browser and click Submit yourself. The browser stays open until you press Enter in the terminal (or a configurable timeout passes).
 
+### Reachability (client-side apps, iframes, custom domains)
+- **SPA forms**: client-side rendered forms (Greenhouse's new UI, Workday, Lever) are waited for before filling.
+- **Iframe-embedded forms**: fields are collected and filled **across all frames**, so application forms embedded in cross-origin iframes (e.g. Greenhouse embeds behind custom domains like `jobs.elastic.co`, `jobs.dropbox.com`) are filled too.
+- **Shadow DOM forms**: open shadow roots are traversed for collection, filling, and button clicks (needed for Workday-style encapsulated UIs).
+- **Apply CTA following**: when a page has no application form (custom-domain boards that park it behind an "Apply Now for ..." link — e.g. `jobs.elastic.co`, SAP careers), the best visible apply CTA is followed **once** (SPA-trap links like `/#/` are rejected; a CTA that opens a **new tab** is followed there), the form is awaited, and filling retries if the first pass found nothing.
+- **Cookie/consent overlays**: banners (OneTrust, TrustArc "Understood", etc. — including ones rendered inside shadow roots) that swallow clicks are dismissed once before interacting. Privacy-friendly options ("Reject all" / "Only essential") are preferred when offered.
+- Analytics/captcha frames (`about:blank`, recaptcha, GTM, doubleclick, ...) are never treated as form surfaces.
+
+### Platform support & live-test status
+
+| Platform | Detection | Live-verified behaviour |
+|---|---|---|
+| Greenhouse (boards.greenhouse.io / job-boards.greenhouse.io) | ✓ | ✓ Filled 6 fields + attached both PDFs; EEO skipped; nothing submitted |
+| Greenhouse via **custom domain + iframe** (jobs.elastic.co) | ✓ (generic/CTA path) | ✓ CTA followed, iframe form filled, both PDFs attached inside the iframe |
+| Lever (jobs.lever.co) | ✓ | ✓ Apply button followed, 6 fields + resume attached; consent skipped |
+| SAP SuccessFactors (careers.sap.com, *.successfactors.com, *.sapsf.com) | ✓ | ✓ Banner dismissed, CTA followed to the SuccessFactors apply page; stopped safely at the **account/login wall** (SAP requires an account — passwords are never touched) |
+| SEEK | ✓ | Adapter implemented (Apply-button following); live apply flow requires a SEEK login → login-wall path; not live-verified end-to-end |
+| Workday (myworkdayjobs.com etc.) | ✓ | Adapter implemented (CXS apply-button click, shadow-DOM piercing); **live apply-flow not yet verified** — tenants vary and some flows did not advance under automation |
+| Any other site | generic | Heuristic fill with all the reachability features above; always human-reviewed |
+
 ### Safety model
 - **Never submits by default.** Submit is only clicked when **both** `AUTO_SUBMIT=true` (env) **and** `--submit` (CLI) are set. Both must be on — one is never enough.
-- **Never fills** EEO/diversity survey fields, consent checkboxes, or account-creation/password fields. Every skipped field is logged.
+- **Never fills** EEO/diversity survey fields, consent checkboxes, or account-creation/password fields. Every skipped field is logged. If a form contains password inputs, the **entire form** (including its name/email fields) is left for the human — it's a login/account-creation surface, not an application form.
 - **Login walls are handled**: if the site asks you to sign in, the browser waits (up to `AUTOFILL_LOGIN_WAIT_SECONDS`) for you to log in manually, then continues filling.
 - **90-second per-action watchdog**: any field that hangs is logged and skipped; the rest still get filled.
 - Multi-step ATS wizards: page 1 is filled; later steps are left for you with console guidance.

@@ -1544,6 +1544,16 @@ function extractKeywordHint(jd) {
     return analysis.keywords.slice(0, 15).join(', ') || 'role-specific keywords from JD';
 }
 
+/**
+ * ATS pass threshold. Below this the workflow is rejected and stopped;
+ * >= this the run proceeds to PDFs / autofill / Notion sync.
+ * Configurable via ATS_TARGET_SCORE (default 80).
+ */
+function getAtsTargetScore() {
+    const parsed = parseInt(process.env.ATS_TARGET_SCORE || '', 10);
+    return Number.isFinite(parsed) && parsed >= 1 && parsed <= 100 ? parsed : 80;
+}
+
 function resolveAtsApiUrl(rawUrl) {
     let url = (rawUrl || 'https://ats-api.onl9.club/api/v1').trim().replace(/\/+$/, '');
     if (url.includes('://ats.onl9.club')) {
@@ -1588,7 +1598,7 @@ function calculateLocalAtsScore(cvText, jobDescription, meta = {}) {
     }
 
     const overallScore = Math.min(96, Math.max(55, Math.round((keywordScore * 0.45) + (sectionScore * 0.35) + (titleScore * 0.20))));
-    const passed = overallScore >= 85;
+    const passed = overallScore >= getAtsTargetScore();
 
     const reportLines = [
         `ATS Score: ${overallScore}% (Local Keyword Analysis)`
@@ -1913,7 +1923,7 @@ async function checkAtsScoreViaApi(cvText, jobDescription, meta = {}) {
                 fs.writeFileSync(path.join(process.cwd(), 'output', 'ats_analysis.json'), JSON.stringify(data, null, 2));
             } catch (_) {}
 
-            const passed = score >= 85;
+            const passed = score >= getAtsTargetScore();
             log(passed ? `ATS PASSED (${score}%)` : `ATS FAILED (${score}%) — keyword report captured`);
             return {
                 score,
@@ -1943,7 +1953,7 @@ async function checkAtsScoreViaApi(cvText, jobDescription, meta = {}) {
 }
 
 async function improveCVWithReport({ cvMarkdown, keywordReport, jobDescription, jobLink, companyName, jobTitle, llmConfig, llmChain, score, missingKeywords, weakKeywords, missingSkills = [], experienceMatches = [], formattingIssues, iteration = 1, candidateProfile }) {
-    log(`Improving CV using ATS keyword report (Iteration pass ${iteration + 1}, current score ${score != null ? score + '%' : 'below 85'})...`);
+    log(`Improving CV using ATS keyword report (Iteration pass ${iteration + 1}, current score ${score != null ? score + '%' : 'below target'})...`);
     const chain = llmChain || (llmConfig ? [llmConfig] : null);
     const candidateName = candidateProfile?.name || 'MAGHAV AHUJA';
     const employersList = candidateProfile ? getEmployerNamesSummary(candidateProfile) : 'Neurix Limited, Datacom NZ, Department of Education Government of Delhi, Mitre10 MEGA';
@@ -1975,8 +1985,10 @@ async function improveCVWithReport({ cvMarkdown, keywordReport, jobDescription, 
         ? formattingIssues.map(f => `- ${f.check_name}: ${f.message} (penalty: ${f.penalty_applied || 0} pts)`).join('\n')
         : '(All formatting checks passed)';
 
-    const prompt = `You are an elite ATS resume architect. The current CV scored ${score != null ? score : 'under 85'}% against the ATS scanner (ats.onl9.club). We MUST increase the score to 85%+ (target: 92-96%).
+    const prompt = `You are an elite ATS resume architect. The current CV scored ${score != null ? score : 'under target'}% against the ATS scanner (ats.onl9.club). We MUST increase the score to ${getAtsTargetScore()}%+ (target: 92-96%).
 Systematically resolve the keyword gaps, formatting penalties, and requirement mismatches identified below while strictly preserving verified factual history.
+
+HARD LENGTH CONSTRAINT (OVERRIDES EVERYTHING BELOW): the finished CV MUST total 900 to 1020 words. The integrity gate HARD-REJECTS any CV over 1200 words — an over-long CV scores ZERO no matter how many keywords it contains. If embedding the keywords below would push the CV past 1020 words, first tighten and merge existing bullets to make room. NEVER exceed 1100 words.
 
 === CURRENT CV (TO OPTIMIZE) ===
 ${truncCV}
@@ -2005,7 +2017,7 @@ Title: ${jobTitle} | Employer: ${companyName}
 JD:
 ${truncJD}
 
-=== MANDATORY ACTION PLAN TO GUARANTEE 85+ SCORE ===
+=== MANDATORY ACTION PLAN TO GUARANTEE ${getAtsTargetScore()}+ SCORE ===
 1. CONTEXTUAL KEYWORD WEAVING:
    - Every single missing keyword and hard skill listed above MUST be present verbatim in the CV.
    - Add technical tools, platforms, and methodologies into the TECHNICAL SKILLS matrix under relevant categories.
@@ -2021,7 +2033,7 @@ ${truncJD}
    - Preserve ${volunteerEduList}.
    - DO NOT invent new employers, companies, degrees, or dates.
 4. TARGET DENSITY:
-   - Maintain 900 to 1020 words to fit exactly 2 full A4 pages in the rendered PDF.
+   - Maintain 900 to 1020 words to fit exactly 2 full A4 pages in the rendered PDF (see the HARD LENGTH CONSTRAINT above — this is enforced by an automated word-count gate).
 
 Output ONLY the complete improved Markdown CV starting immediately with "# ${candidateName}". No commentary, no preamble.`;
 
@@ -2457,10 +2469,11 @@ class JobApplicationPipeline {
         // my_cvs and output are direct children of workspaceRoot
         this.myCvsDir = path.join(this.workspaceRoot, 'my_cvs');
         this.outputDir = path.join(this.workspaceRoot, 'output');
-        // ATS improvement loop: when score < 85, the CV is improved from the API keyword report.
+        // ATS improvement loop: when score is below the target, the CV is improved from the API keyword report.
         // Each improved CV must re-pass the factual integrity gate before it is accepted.
         const maxIterEnv = parseInt(process.env.JOB_PIPELINE_MAX_ITERATIONS || '', 10);
         this.maxIterations = Number.isFinite(maxIterEnv) && maxIterEnv >= 1 ? maxIterEnv : 5;
+        this.atsTarget = getAtsTargetScore();
         this.skipAts = config.skipAts === true || /^(1|true|yes)$/i.test(process.env.JOB_PIPELINE_SKIP_ATS || '');
         this.forceSync = config.forceSync === true || /^(1|true|yes)$/i.test(process.env.FORCE_SYNC || '');
         this.skipSync = config.skipSync === true || /^(0|false|no)$/i.test(process.env.SYNC_PORTFOLIO_ON_RUN || '');
@@ -2658,8 +2671,8 @@ class JobApplicationPipeline {
             let bestCV = currentCV;
             let bestReport = atsResult.keywordReport;
 
-            if (atsResult.score >= 85) {
-                log(`✅ ATS TARGET ACHIEVED ON INITIAL PASS: ${atsResult.score}% >= 85% (Single Iteration Success)!`);
+            if (atsResult.score >= this.atsTarget) {
+                log(`✅ ATS TARGET ACHIEVED ON INITIAL PASS: ${atsResult.score}% >= ${this.atsTarget}% (Single Iteration Success)!`);
             } else if (atsResult.score === 0 && (atsResult.error || atsResult.parseFailed)) {
                 log('ats.onl9.club API is unreachable/erroring — skipping ATS improvement loop, keeping the generated CV as-is');
                 atsResult = { ...atsResult, needsImprovement: false };
@@ -2670,7 +2683,7 @@ class JobApplicationPipeline {
                     log(`ATS API check errored repeatedly — stopping ATS loop (API likely down)`);
                     break;
                 }
-                log(`--- Iteration ${iteration + 1}/${this.maxIterations}: improving CV (current score ${atsResult.score}%, best so far ${bestScore}%, target >= 85%) ---`);
+                log(`--- Iteration ${iteration + 1}/${this.maxIterations}: improving CV (current score ${atsResult.score}%, best so far ${bestScore}%, target >= ${this.atsTarget}%) ---`);
                 let improved;
                 try {
                     improved = await improveCVWithReport({
@@ -2742,8 +2755,8 @@ Output ONLY the corrected Markdown CV starting with "# ${candidateProfile?.name 
                     } else {
                         log(`  Score ${atsResult.score}% not better than best ${bestScore}% (keeping best)`);
                     }
-                    if (atsResult.score >= 85) {
-                        log(`✅ ATS TARGET ACHIEVED: ${atsResult.score}% >= 85% on iteration ${iteration + 1}!`);
+                    if (atsResult.score >= this.atsTarget) {
+                        log(`✅ ATS TARGET ACHIEVED: ${atsResult.score}% >= ${this.atsTarget}% on iteration ${iteration + 1}!`);
                         break;
                     }
                 } else {
@@ -2758,22 +2771,22 @@ Output ONLY the corrected Markdown CV starting with "# ${candidateProfile?.name 
                 log(`Restoring best CV (score ${bestScore}% vs final ${atsResult.score}%)`);
                 currentCV = bestCV;
                 fs.writeFileSync(path.join(this.outputDir, 'optimized_cv.md'), currentCV);
-                atsResult = { score: bestScore, passed: bestScore >= 85, needsImprovement: bestScore < 85, keywordReport: bestReport };
+                atsResult = { score: bestScore, passed: bestScore >= this.atsTarget, needsImprovement: bestScore < this.atsTarget, keywordReport: bestReport };
             }
             const finalScore = atsResult.score;
             log(finalScore == null
                 ? 'ATS score: not checked'
-                : `Final ATS score: ${finalScore}% ${finalScore >= 85 ? '✅ PASS' : '❌ FAILED (<85)'}`);
+                : `Final ATS score: ${finalScore}% ${finalScore >= this.atsTarget ? '✅ PASS' : `❌ FAILED (<${this.atsTarget})`}`);
 
             // Save ATS report
             try {
-                fs.writeFileSync(path.join(this.outputDir, 'ats_result.json'), JSON.stringify({ score: finalScore, passed: finalScore >= 85, iterations: iteration, link: this.jobLink }, null, 2));
+                fs.writeFileSync(path.join(this.outputDir, 'ats_result.json'), JSON.stringify({ score: finalScore, passed: finalScore >= this.atsTarget, iterations: iteration, link: this.jobLink }, null, 2));
                 this.trackCreatedFile(path.join(this.outputDir, 'ats_result.json'));
             } catch (_) {}
 
-            // Strict ATS Score Gate: Fail workflow if ATS score is below 85
-            if (finalScore != null && finalScore < 85) {
-                const failMsg = `ATS score failed to reach 85% (final score: ${finalScore}% after ${iteration} iteration(s)). Per user rules, workflow is deemed a failure and stopped to prevent low-scoring application submission.`;
+            // Strict ATS Score Gate: Fail workflow if ATS score is below the target
+            if (finalScore != null && finalScore < this.atsTarget) {
+                const failMsg = `ATS score failed to reach ${this.atsTarget}% (final score: ${finalScore}% after ${iteration} iteration(s)). Per user rules, workflow is deemed a failure and stopped to prevent low-scoring application submission.`;
                 log(`❌ ${failMsg}`);
                 try {
                     fs.writeFileSync(path.join(this.outputDir, 'ats_failure.json'), JSON.stringify({
@@ -3071,7 +3084,7 @@ Output ONLY the fixed CV in Markdown starting with "# ${candidateProfile?.name |
                 companyName: jobInfo.companyName,
                 jobTitle: jobInfo.jobTitle,
                 atsScore: finalScore,
-                atsPassed: finalScore >= 85,
+                atsPassed: finalScore >= this.atsTarget,
                 cvPdfPages: cvPdfResult.pages,
                 clPdfPages: clPdfResult.pages,
                 cvPdfPath: cvPdfResult.outputPath,
@@ -3127,6 +3140,7 @@ module.exports._internals = {
     getEducationNamesSummary,
     getVolunteerNamesSummary,
     improveCVWithReport,
+    getAtsTargetScore,
     enforceAtsBulletConstraints,
     ensureAtsKeywordsPresent,
     scrapeJobDescription,

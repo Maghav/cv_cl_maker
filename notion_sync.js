@@ -437,7 +437,7 @@ function buildPageBlocks(jobData, atsData, uploadedFiles = {}) {
                     },
                 },
             ],
-            icon: { type: 'emoji', emoji: score && score >= 85 ? '✅' : '📄' },
+            icon: { type: 'emoji', emoji: score && score >= 80 ? '✅' : '📄' },
             color: 'blue_background',
         },
     });
@@ -826,7 +826,7 @@ if (require.main === module) {
                     jobTitle: meta.jobTitle || 'Test Role',
                     companyName: meta.companyName || 'Test Company',
                     jobLink: meta.link || 'https://example.com',
-                    score: atsResult.score != null ? atsResult.score : 85,
+                    score: atsResult.score != null ? atsResult.score : 80,
                     cvPdfPath: cvPdf ? path.join(outputDir, cvPdf) : null,
                     clPdfPath: clPdf ? path.join(outputDir, clPdf) : null,
                     cvMarkdown: fs.existsSync(cvMdPath) ? fs.readFileSync(cvMdPath, 'utf8') : '',

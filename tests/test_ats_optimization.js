@@ -14,7 +14,7 @@ const {
 } = Pipeline._internals;
 
 async function runTests() {
-    console.log('=== ATS 85+ Optimization Suite ===\n');
+    console.log('=== ATS 80+ Optimization Suite ===\n');
 
     const profile = loadCandidateProfile(path.resolve(__dirname, '..'));
 
