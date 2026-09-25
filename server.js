@@ -78,6 +78,8 @@ function startPipeline(jobLink, llmOverrides = {}, extraEnv = {}, options = {}) 
     const env = {
         ...process.env,
         ...extraEnv,
+        // Optional semi-automatic form autofill (OFF unless requested; run_pipeline.js also honors --apply)
+        ...(options.apply ? { AUTO_APPLY: 'true' } : {}),
         // Allow per-request LLM overrides
         ...(llmOverrides.llmApiKey ? { LLM_API_KEY: llmOverrides.llmApiKey } : {}),
         ...(llmOverrides.llmModel ? { LLM_MODEL: llmOverrides.llmModel } : {}),
@@ -121,6 +123,7 @@ function startPipeline(jobLink, llmOverrides = {}, extraEnv = {}, options = {}) 
                     if (parsed.atsScore != null) job.atsScore = parsed.atsScore;
                     if (parsed.notionResult) job.notionResult = parsed.notionResult;
                     if (parsed.cleanedUpFiles) job.cleanedUpFiles = parsed.cleanedUpFiles;
+                    if (parsed.autofill) job.autofill = parsed.autofill;
                 }
             } catch (_) {}
             // Fallback: Try to read ats_result.json for score if not in stdout
@@ -159,7 +162,7 @@ function startPipeline(jobLink, llmOverrides = {}, extraEnv = {}, options = {}) 
 // REST endpoints
 // ---------------------------------------------------------------------------
 app.post('/api/start-pipeline', (req, res) => {
-    const { jobLink, llmApiKey, llmModel, llmBaseUrl, forceSync, skipSync } = req.body || {};
+    const { jobLink, llmApiKey, llmModel, llmBaseUrl, forceSync, skipSync, apply } = req.body || {};
     if (!jobLink || typeof jobLink !== 'string' || !jobLink.trim()) {
         return res.status(400).json({ success: false, error: 'jobLink is required' });
     }
@@ -169,7 +172,7 @@ app.post('/api/start-pipeline', (req, res) => {
         jobLink.trim(),
         { llmApiKey, llmModel, llmBaseUrl },
         {},
-        { forceSync: Boolean(forceSync), skipSync: Boolean(skipSync) }
+        { forceSync: Boolean(forceSync), skipSync: Boolean(skipSync), apply: Boolean(apply) }
     );
     if (error) return res.status(400).json({ success: false, error });
 
@@ -198,6 +201,7 @@ app.get('/api/pipeline-status/:workflowId', (req, res) => {
         atsScore,
         notionResult,
         cleanedUpFiles,
+        autofill: job.autofill || (job.result && job.result.autofill) || null,
         outputFiles: job.outputFiles.length ? job.outputFiles : (fs.existsSync(OUTPUT_DIR) ? fs.readdirSync(OUTPUT_DIR).filter(f => !f.startsWith('.')) : []),
         logTail: (job.log || '').slice(-3000),
     });

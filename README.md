@@ -20,6 +20,7 @@ Paste a job link → get an ATS-optimised 2-page CV + 1-page cover letter, autom
 |------|---------|
 | `job_application_form.html` | Web form — paste link, optionally override LLM key/model |
 | `job_application_pipeline.js` | Core pipeline orchestrator |
+| `form_autofill.js` | Semi-automatic application form autofill (human-in-the-loop) |
 | `notion_sync.js` | Notion API integration — uploads PDFs and logs applications |
 | `server.js` | HTTP server with web form UI and REST status polling |
 | `run_pipeline.js` | CLI entry point |
@@ -141,7 +142,51 @@ node server.js
 node run_pipeline.js "https://www.seek.co.nz/job/94121243"
 # With explicit key/model override:
 node run_pipeline.js "https://www.seek.co.nz/job/94121243" "gsk_..." "openai/gpt-oss-120b"
+# Generate the CV/CL, then auto-fill the job's application form for your review:
+node run_pipeline.js "https://www.seek.co.nz/job/94121243" --apply
 ```
+
+## Semi-Automatic Application Form Autofill
+
+After the pipeline generates the CV + cover letter PDFs, it can **pre-fill the job's online application form** for you — closing the last manual gap (generate → apply) while keeping a human in the loop.
+
+### How it works
+1. A **visible (non-headless) browser** opens at the job posting (Workday, Greenhouse, Lever, SEEK, or generic career sites).
+2. Form fields are matched by label/name/id/placeholder/aria-label and filled from `candidate_profile.json` (name, email, phone, location, LinkedIn, GitHub).
+3. The generated CV PDF goes to the first resume upload slot; the cover letter PDF to a second slot (or any upload field labelled "cover letter"). The cover letter text (markdown stripped to plain text) is pasted into cover-letter/message textareas.
+4. A screenshot of the filled state is saved to `output/autofill_state.png`.
+5. **It stops there.** You review the open browser and click Submit yourself. The browser stays open until you press Enter in the terminal (or a configurable timeout passes).
+
+### Safety model
+- **Never submits by default.** Submit is only clicked when **both** `AUTO_SUBMIT=true` (env) **and** `--submit` (CLI) are set. Both must be on — one is never enough.
+- **Never fills** EEO/diversity survey fields, consent checkboxes, or account-creation/password fields. Every skipped field is logged.
+- **Login walls are handled**: if the site asks you to sign in, the browser waits (up to `AUTOFILL_LOGIN_WAIT_SECONDS`) for you to log in manually, then continues filling.
+- **90-second per-action watchdog**: any field that hangs is logged and skipped; the rest still get filled.
+- Multi-step ATS wizards: page 1 is filled; later steps are left for you with console guidance.
+
+### Usage
+
+```bash
+# Standalone (defaults to the newest *_CV.pdf / *_CL.pdf in output/):
+node form_autofill.js "https://boards.greenhouse.io/acme/jobs/123456"
+node form_autofill.js "https://jobs.lever.co/acme/8a2f1b" --cv output/Optimized_CV.pdf --cl output/Cover_Letter.pdf
+
+# As part of the pipeline:
+node run_pipeline.js "<job link>" --apply          # CLI
+# or tick "Auto-fill the application form" in the web form
+# or POST { "jobLink": "...", "apply": true } to /api/start-pipeline
+```
+
+### Environment variables (all optional, OFF by default)
+
+```ini
+AUTO_APPLY=false                     # run autofill after PDFs are generated in the pipeline
+AUTO_SUBMIT=false                    # NEVER enable casually — submits without human review
+AUTOFILL_LOGIN_WAIT_SECONDS=180      # how long to wait for a manual sign-in
+AUTOFILL_REVIEW_WAIT_SECONDS=300     # how long the browser stays open for review (0 = close immediately)
+```
+
+If the login wait times out, autofill returns `reason: "login_required"` with the live browser URL so you can finish manually; the pipeline continues to Notion sync as normal either way.
 
 ## Output
 
@@ -173,4 +218,4 @@ Pipelines keep the **best** CV across iterations (if a later iteration scores lo
 
 - API keys are only in memory / env, never written to output.
 - `output/` and `my_cvs/` are not committed; never commit `.env`.
-- Browser runs headless by default.
+- Browser runs headless by default — **except** for the form autofill feature, which is intentionally visible because a human must review the form before submitting.

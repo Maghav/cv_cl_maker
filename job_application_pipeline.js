@@ -2999,6 +2999,31 @@ Output ONLY the fixed CV in Markdown starting with "# ${candidateProfile?.name |
             }
             log('='.repeat(60));
 
+            // Optional semi-automatic application form autofill (OFF unless AUTO_APPLY=true).
+            // Opens a visible browser at the job posting, pre-fills the application form from
+            // candidate_profile.json, attaches the generated PDFs, then STOPS for human review
+            // — it never submits unless AUTO_SUBMIT=true is explicitly set.
+            let autofillResult = null;
+            if (String(process.env.AUTO_APPLY).trim().toLowerCase() === 'true') {
+                try {
+                    log('AUTO_APPLY=true — launching semi-automatic application form autofill (visible browser)...');
+                    const { autofillApplication } = require('./form_autofill');
+                    autofillResult = await autofillApplication({
+                        jobLink: this.jobLink,
+                        cvPdfPath: cvPdfResult.outputPath,
+                        clPdfPath: clPdfResult.outputPath,
+                        options: {
+                            outputDir: this.outputDir,
+                            coverLetterText: currentCL,
+                        },
+                    });
+                    log(`Autofill summary: ok=${autofillResult.ok} platform=${autofillResult.platform} filled=${autofillResult.filledFields.length} attached=${autofillResult.attachedFiles.length} submitted=${autofillResult.submitted}${autofillResult.reason ? ` reason=${autofillResult.reason}` : ''}`);
+                    for (const w of autofillResult.warnings) log(`[autofill] Warning: ${w}`);
+                } catch (e) {
+                    log(`[autofill] Warning: autofill failed (${e.message}) — continuing with Notion sync`);
+                }
+            }
+
             // Optional Notion synchronization
             let notionResult = null;
             let cleanedUpFiles = [];
@@ -3054,6 +3079,15 @@ Output ONLY the fixed CV in Markdown starting with "# ${candidateProfile?.name |
                 outputDir: this.outputDir,
                 notionResult,
                 cleanedUpFiles,
+                autofill: autofillResult ? {
+                    ok: autofillResult.ok,
+                    platform: autofillResult.platform,
+                    filledFields: autofillResult.filledFields,
+                    attachedFiles: autofillResult.attachedFiles,
+                    submitted: autofillResult.submitted,
+                    reason: autofillResult.reason || null,
+                    screenshotPath: autofillResult.screenshotPath || null,
+                } : null,
             };
         } finally {
             if (browser) await browser.close().catch(() => {});

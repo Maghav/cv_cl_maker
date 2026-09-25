@@ -24,6 +24,8 @@ async function main() {
         console.log('  llm_base_url: optional override (else uses LLM_BASE_URL / .env provider chain)');
         console.log('  --force-sync: force fresh live portfolio scrape & CV PDF re-parsing');
         console.log('  --skip-sync:  skip preflight profile synchronization');
+        console.log('  --apply:      after PDFs are generated, open a visible browser and pre-fill the');
+        console.log('                job application form (never submits — you review & click Submit)');
         console.log('');
         console.log('Examples:');
         console.log('  node run_pipeline.js "https://www.seek.co.nz/job/94121243"');
@@ -34,6 +36,7 @@ async function main() {
 
     const forceSync = rawArgs.includes('--force-sync') || rawArgs.includes('-f');
     const skipSync = rawArgs.includes('--skip-sync');
+    const apply = rawArgs.includes('--apply');
     const positional = rawArgs.filter(a => !a.startsWith('--') && !a.startsWith('-'));
     const [jobLink, llmApiKey, llmModel, llmBaseUrl] = positional;
 
@@ -46,6 +49,9 @@ async function main() {
         console.error(`Invalid URL: ${jobLink}`);
         process.exit(1);
     }
+
+    // Semi-automatic form autofill is OFF unless --apply is passed (or AUTO_APPLY=true is already set)
+    if (apply) process.env.AUTO_APPLY = 'true';
 
     const pipeline = new JobApplicationPipeline({
         jobLink,
