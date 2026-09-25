@@ -10,6 +10,8 @@ const {
     detectApplyPlatform,
     buildFormValueMap,
     markdownToPlainText,
+    isUsableFormFrameUrl,
+    resolveCtaHref,
 } = require('../form_autofill');
 
 let section = '';
@@ -172,6 +174,15 @@ check('seek.co.nz URL → seek', () => {
 check('seek.com.au URL → seek', () => {
     assert.strictEqual(detectApplyPlatform('https://www.seek.com.au/job/94121243'), 'seek');
 });
+check('careers.sap.com URL → sap', () => {
+    assert.strictEqual(detectApplyPlatform('https://careers.sap.com/job/4071387/software-engineer/job'), 'sap');
+});
+check('successfactors.com tenant URL → sap', () => {
+    assert.strictEqual(detectApplyPlatform('https://career.acme.successfactors.com/careers?company=acme'), 'sap');
+});
+check('sapsf.com URL → sap', () => {
+    assert.strictEqual(detectApplyPlatform('https://careers.acme.sapsf.com/careers'), 'sap');
+});
 check('random company careers page → generic', () => {
     assert.strictEqual(detectApplyPlatform('https://careers.acme.com/openings/senior-engineer'), 'generic');
 });
@@ -243,6 +254,50 @@ check('handles a realistic cover letter block', () => {
 check('null/empty input returns empty string', () => {
     assert.strictEqual(markdownToPlainText(null), '');
     assert.strictEqual(markdownToPlainText(''), '');
+});
+
+// ---------------------------------------------------------------------------
+suite('isUsableFormFrameUrl');
+check('job page and Greenhouse embed frames are usable', () => {
+    assert.strictEqual(isUsableFormFrameUrl('https://jobs.elastic.co/jobs/it-support-admin/8142818'), true);
+    assert.strictEqual(isUsableFormFrameUrl('https://job-boards.greenhouse.io/embed/job_app?for=elastic&gh_jid=8142818'), true);
+});
+check('about:/data: frames are junk', () => {
+    assert.strictEqual(isUsableFormFrameUrl('about:blank'), false);
+    assert.strictEqual(isUsableFormFrameUrl('data:text/html,hello'), false);
+    assert.strictEqual(isUsableFormFrameUrl(''), false);
+    assert.strictEqual(isUsableFormFrameUrl(null), false);
+});
+check('analytics/captcha/tracker frames are junk', () => {
+    assert.strictEqual(isUsableFormFrameUrl('https://www.recaptcha.net/recaptcha/enterprise/anchor?ar=1'), false);
+    assert.strictEqual(isUsableFormFrameUrl('https://www.googletagmanager.com/ns.html?id=GTM-XYZ'), false);
+    assert.strictEqual(isUsableFormFrameUrl('https://15244908.fls.doubleclick.net/activityi;src=1'), false);
+    assert.strictEqual(isUsableFormFrameUrl('https://content.googleapis.com/static/proxy.html?usegapi=1'), false);
+});
+
+// ---------------------------------------------------------------------------
+suite('resolveCtaHref');
+check('resolves relative hrefs against the page URL', () => {
+    assert.strictEqual(
+        resolveCtaHref('/form?gh_jid=8142818', 'https://jobs.elastic.co/jobs/it-support-admin/8142818'),
+        'https://jobs.elastic.co/form?gh_jid=8142818'
+    );
+});
+check('passes absolute URLs through', () => {
+    assert.strictEqual(
+        resolveCtaHref('https://careers.example.com/apply/123'),
+        'https://careers.example.com/apply/123'
+    );
+});
+check('hash-only SPA links are rejected (nav "Apply Now" → "#/"), not form destinations', () => {
+    assert.strictEqual(resolveCtaHref('#/', 'https://jobs.elastic.co/jobs/1'), null);
+    assert.strictEqual(resolveCtaHref('#apply', 'https://jobs.elastic.co/jobs/1'), null);
+    assert.strictEqual(resolveCtaHref('#', 'https://jobs.elastic.co/jobs/1'), null);
+});
+check('empty/invalid input returns null, invalid base throws-safe', () => {
+    assert.strictEqual(resolveCtaHref('', 'https://example.com'), null);
+    assert.strictEqual(resolveCtaHref(null, 'https://example.com'), null);
+    assert.strictEqual(resolveCtaHref('/apply', 'not-a-url'), null);
 });
 
 console.log(`\nAll ${count} form autofill checks passed.`);

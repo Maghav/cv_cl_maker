@@ -14,6 +14,14 @@
  *  - 90s per-action watchdog: a hanging selector is logged and skipped, the
  *    remaining fields still get filled.
  *
+ * Reachability model:
+ *  - Forms rendered client-side are waited for (SPA boards).
+ *  - Fields are collected and filled across ALL frames, so application forms
+ *    embedded in cross-origin iframes (custom-domain Greenhouse/Lever boards,
+ *    e.g. jobs.elastic.co) are filled too.
+ *  - If a page has no form at all, the visible non-nav "Apply" CTA is followed
+ *    ONCE to reach the embed page (custom-domain pattern), then filling retries.
+ *
  * Env vars (all optional, see .env.example):
  *  AUTO_APPLY                    — pipeline integration switch (OFF by default)
  *  AUTO_SUBMIT                   — gated submit click (NEVER enable casually)
@@ -193,7 +201,7 @@ function classifyFormField(info = {}) {
 
 /**
  * Map an application URL onto a platform adapter key.
- * @returns {'workday'|'greenhouse'|'lever'|'seek'|'generic'}
+ * @returns {'workday'|'greenhouse'|'lever'|'seek'|'sap'|'generic'}
  */
 function detectApplyPlatform(url) {
     try {
@@ -202,9 +210,37 @@ function detectApplyPlatform(url) {
         if (host.includes('greenhouse.io')) return 'greenhouse';
         if (host.includes('lever.co')) return 'lever';
         if (host.includes('seek.co.nz') || host.includes('seek.com.au')) return 'seek';
+        // SAP SuccessFactors career sites (SAP's own board + tenant instances)
+        if (host === 'careers.sap.com' || host.includes('successfactors.com') || host.includes('sapsf.com')) return 'sap';
         return 'generic';
     } catch (_) {
         return 'generic';
+    }
+}
+
+/**
+ * Junk frames (analytics, captcha shims, about:blank) never hold application forms.
+ * Pure — unit-tested.
+ */
+function isUsableFormFrameUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    if (/^(about:|data:|chrome:)/i.test(url)) return false;
+    return !/(recaptcha|googleapis\.com\/static\/proxy|doubleclick\.net|company-target\.com|googletagmanager\.com|addthis\.com|adservice\.)/i.test(url);
+}
+
+/**
+ * Resolve a CTA href (possibly relative) to an absolute URL. Hash-only links
+ * ("#", "#/", "#apply") are SPA routing noise, not form destinations → null.
+ * Pure — unit-tested.
+ */
+function resolveCtaHref(href, baseUrl) {
+    if (!href || typeof href !== 'string') return null;
+    const trimmed = href.trim();
+    if (trimmed === '' || trimmed.startsWith('#')) return null;
+    try {
+        return new URL(trimmed, baseUrl).href;
+    } catch (_) {
+        return null;
     }
 }
 
@@ -212,8 +248,13 @@ function detectApplyPlatform(url) {
 // DOM helpers (all wrapped in watchdogs by the callers)
 // ---------------------------------------------------------------------------
 
-async function collectFieldDescriptors(page) {
-    return page.evaluate(() => {
+function listUsableFrames(page) {
+    return (page.frames() || []).filter((f) => isUsableFormFrameUrl(f.url()));
+}
+
+/** Collect descriptors from ONE frame (works for pages and iframes alike). */
+async function collectFieldDescriptors(frame) {
+    return frame.evaluate(() => {
         const visible = (el) => {
             try {
                 const style = window.getComputedStyle(el);
@@ -261,9 +302,27 @@ async function collectFieldDescriptors(page) {
 
         const out = [];
         let idx = 0;
-        for (const el of document.querySelectorAll('input, textarea, select')) {
+        // Workday (and other modern boards) render their forms inside open SHADOW ROOTS,
+        // which document.querySelectorAll cannot see. Walk them explicitly.
+        const collectRoots = (root) => {
+            const roots = [root];
+            try {
+                for (const el of root.querySelectorAll('*')) {
+                    if (el.shadowRoot) roots.push(...collectRoots(el.shadowRoot));
+                }
+            } catch (_) {}
+            return roots;
+        };
+        const allFields = [];
+        for (const r of collectRoots(document)) {
+            for (const el of r.querySelectorAll('input, textarea, select')) allFields.push(el);
+        }
+        for (const el of allFields) {
             if (el.type === 'hidden' || el.disabled || el.readOnly) continue;
-            if (!visible(el)) continue;
+            // File inputs are usually visually hidden behind a styled dropzone/"Choose file"
+            // button — keep them even when invisible, Puppeteer can still upload into them.
+            const isFileInput = el.tagName === 'INPUT' && el.type === 'file';
+            if (!isFileInput && !visible(el)) continue;
             const dIdx = idx++;
             el.setAttribute('data-autofill-idx', String(dIdx));
             out.push({
@@ -282,6 +341,82 @@ async function collectFieldDescriptors(page) {
         }
         return out;
     });
+}
+
+/**
+ * Collect descriptors from every usable frame. Custom-domain boards (e.g.
+ * jobs.elastic.co, jobs.dropbox.com) embed the actual Greenhouse/Lever form in a
+ * cross-origin iframe — a main-frame-only sweep finds nothing there.
+ */
+async function collectFieldDescriptorsAllFrames(frames) {
+    const out = [];
+    for (let fIdx = 0; fIdx < frames.length; fIdx++) {
+        const frame = frames[fIdx];
+        let descs = [];
+        try {
+            descs = (await collectFieldDescriptors(frame)) || [];
+        } catch (_) { continue; } // frame navigated away mid-sweep
+        for (const d of descs) {
+            d.frameIdx = fIdx;
+            d.frameUrl = frame.url();
+            out.push(d);
+        }
+    }
+    return out;
+}
+
+/** Re-resolve the frame a descriptor was collected from (frames can navigate mid-fill). */
+function resolveDescriptorFrame(page, d, framesSnapshot) {
+    const frames = listUsableFrames(page);
+    if (d.frameUrl && frames.some((f) => f.url() === d.frameUrl)) {
+        return frames.find((f) => f.url() === d.frameUrl);
+    }
+    if (framesSnapshot && framesSnapshot[d.frameIdx] && frames.includes(framesSnapshot[d.frameIdx])) {
+        return framesSnapshot[d.frameIdx];
+    }
+    return null;
+}
+
+/** Query the first element matching `sel`, piercing open shadow roots (Workday-style UIs). */
+async function deepQueryFirst(pageOrFrame, sel) {
+    try {
+        const handle = await pageOrFrame.evaluateHandle((s) => {
+            const deep = (root) => {
+                const direct = root.querySelector(s);
+                if (direct) return direct;
+                for (const el of root.querySelectorAll('*')) {
+                    if (el.shadowRoot) {
+                        const found = deep(el.shadowRoot);
+                        if (found) return found;
+                    }
+                }
+                return null;
+            };
+            return deep(document);
+        }, sel);
+        const el = handle.asElement();
+        if (el) return el;
+    } catch (_) {}
+    try { return await pageOrFrame.$(sel); } catch (_) { return null; }
+}
+
+/** Count text-ish form fields, piercing open shadow roots. */
+async function deepFieldCount(frame) {
+    try {
+        return await frame.evaluate(() => {
+            let count = 0;
+            const walk = (root) => {
+                count += root.querySelectorAll('input:not([type=hidden]), textarea').length;
+                for (const el of root.querySelectorAll('*')) {
+                    if (el.shadowRoot) walk(el.shadowRoot);
+                }
+            };
+            walk(document);
+            return count;
+        });
+    } catch (_) {
+        return 0;
+    }
 }
 
 function describeField(d) {
@@ -411,14 +546,37 @@ async function handleLoginWall(page, waitSeconds, warnings) {
 
 async function runHeuristicFill(ctx) {
     const { page, valueMap, cvPdfPath, clPdfPath, filledFields, attachedFiles, skippedFields, warnings } = ctx;
-    const descriptors = (await withWatchdog(collectFieldDescriptors(page), 'collect form fields')) || [];
-    console.log(`[autofill] Found ${descriptors.length} visible form field(s) on ${page.url()}`);
+    const frames = listUsableFrames(page);
+    const descriptors = (await withWatchdog(collectFieldDescriptorsAllFrames(frames), 'collect form fields')) || [];
+    console.log(`[autofill] Found ${descriptors.length} visible form field(s) across ${frames.length} frame(s) on ${page.url()}`);
+    if (descriptors.length === 0) {
+        // Self-diagnosis: explain WHY nothing was found (frames blocked, still loading, junk-filtered).
+        const tree = await Promise.all((page.frames() || []).map(async (f) => {
+            const n = await f.evaluate(() => document.querySelectorAll('input:not([type=hidden]), textarea').length).catch(() => 'ERR');
+            return `[${n} field(s) ${f === page.mainFrame() ? '' : 'iframe '}${f.url().slice(0, 90)}]`;
+        }));
+        console.log(`[autofill] Frame tree at collect time: ${tree.join(' ')}`);
+        console.log(`[autofill] (${frames.length} of ${tree.length} frame(s) passed the usable-frame filter)`);
+    }
 
     let resumeAttached = attachedFiles.some((f) => f.input === 'resume');
     let clAttached = attachedFiles.some((f) => f.input === 'coverLetter');
     let clFilled = false;
 
+    // Account/login walls: a form that contains password inputs is a sign-in or
+    // account-creation surface, NOT an application form. Leave it entirely for the
+    // human (that includes any name/email fields in it — those belong to the account).
+    const framesWithPasswords = new Set(descriptors.filter((d) => d.type === 'password').map((d) => d.frameIdx));
+    if (framesWithPasswords.size > 0) {
+        warnings.push('Login/account-creation form detected (password fields present) — left for the human to complete. Fill your details and sign in; do not enable AUTO_SUBMIT for these.');
+        console.log('[autofill] Password field(s) detected — this looks like a login/account form; leaving it for human review.');
+    }
+
     for (const d of descriptors) {
+        if (framesWithPasswords.has(d.frameIdx)) {
+            skippedFields.push(`${describeField(d)} [accountForm]`);
+            continue;
+        }
         const cls = classifyFormField(d);
         const hint = describeField(d);
         if (cls.skip) {
@@ -433,7 +591,12 @@ async function runHeuristicFill(ctx) {
             continue;
         }
 
-        const handle = await page.$(`[data-autofill-idx="${d.idx}"]`);
+        const frame = resolveDescriptorFrame(page, d, frames);
+        if (!frame) {
+            warnings.push(`Field ${hint} is no longer reachable (its frame navigated away)`);
+            continue;
+        }
+        const handle = await deepQueryFirst(frame, `[data-autofill-idx="${d.idx}"]`);
         if (!handle) continue;
 
         try {
@@ -472,7 +635,8 @@ async function runHeuristicFill(ctx) {
 async function clickApplyButton(page, selectors, warnings) {
     for (const sel of selectors) {
         try {
-            const btn = await page.$(sel);
+            let btn = await page.$(sel);
+            if (!btn) btn = await deepQueryFirst(page, sel); // Workday keeps buttons in shadow roots
             if (!btn) continue;
             const clickable = await btn.evaluate((el) => {
                 const s = window.getComputedStyle(el);
@@ -500,6 +664,215 @@ async function resolveActivePage(browser, page) {
     return page;
 }
 
+/** Many boards (Greenhouse's new UI, Workday, Lever) render their form client-side —
+ *  and custom-domain boards render it inside an iframe. Wait for fields in ANY usable
+ *  frame, piercing open shadow roots (Workday-style UIs). */
+async function waitForAnyFormField(page, timeout = 12000) {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+        for (const frame of listUsableFrames(page)) {
+            if ((await deepFieldCount(frame)) >= 1) return;
+        }
+        await new Promise((r) => setTimeout(r, 300));
+    }
+}
+
+/**
+ * Cookie/consent overlays sit on top of career pages and swallow every click
+ * (including ours). Dismiss common banners once so the page becomes clickable.
+ * Prefers privacy-friendly rejections ("Reject all", "Only essential") when
+ * offered, falls back to accept-style buttons. Never touches containers that
+ * look like real forms (text inputs/textarea present).
+ */
+async function dismissCookieOverlay(page) {
+    try {
+        const handle = await page.evaluateHandle(() => {
+            // Banners can live inside open shadow roots (Workday-style encapsulated UIs).
+            const collectRoots = (root) => {
+                const roots = [root];
+                try {
+                    for (const el of root.querySelectorAll('*')) {
+                        if (el.shadowRoot) roots.push(...collectRoots(el.shadowRoot));
+                    }
+                } catch (_) {}
+                return roots;
+            };
+            const roots = collectRoots(document);
+            const all = (sel) => {
+                const out = [];
+                for (const r of roots) for (const el of r.querySelectorAll(sel)) out.push(el);
+                return out;
+            };
+            const isConsentContainer = (el) => {
+                const s = getComputedStyle(el);
+                const nm = `${el.id} ${(el.className || '')}`.toString();
+                return s.position === 'fixed' || s.position === 'absolute' || /cookie|consent|onetrust|trustarc|truste|gdpr|ccpa/i.test(nm);
+            };
+            const containers = all('div, section, aside, [role="dialog"]')
+                .filter((el) => {
+                    const s = getComputedStyle(el);
+                    if (s.display === 'none' || s.visibility === 'hidden') return false;
+                    const r = el.getBoundingClientRect();
+                    if (r.width < 200 || r.height < 60) return false;
+                    if (el.querySelectorAll('input:not([type=hidden]):not([type=checkbox]):not([type=radio]), textarea').length > 0) return false; // a real form — hands off
+                    return isConsentContainer(el);
+                });
+            const prefer = [
+                /reject all|reject|deny|only (necessary|essential)|essential cookies/i,
+                /accept( all)?|agree|allow all|allow|got it|understood|i understand|dismiss|ok(ay)?$|continue/i,
+            ];
+            for (const pattern of prefer) {
+                for (const c of containers) {
+                    const cRoots = collectRoots(c);
+                    for (const r of cRoots) {
+                        for (const b of Array.from(r.querySelectorAll('button, a, [role="button"]'))) {
+                            const s = getComputedStyle(b);
+                            const rect = b.getBoundingClientRect();
+                            if (s.display === 'none' || s.visibility === 'hidden' || rect.width < 10 || rect.height < 10) continue;
+                            const text = (b.innerText || b.value || '').trim();
+                            if (text && text.length < 30 && pattern.test(text)) return b;
+                        }
+                    }
+                }
+            }
+            return null;
+        });
+        const el = handle.asElement();
+        if (!el) return false;
+        const label = (await el.evaluate((n) => (n.innerText || n.value || '').trim())).slice(0, 40);
+        console.log(`[autofill] Dismissing a cookie/consent overlay ("${label}") so the page becomes clickable...`);
+        await el.click().catch(() => {});
+        await new Promise((r) => setTimeout(r, 800));
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+async function anyFieldsAcrossFrames(page) {
+    for (const frame of listUsableFrames(page)) {
+        if ((await deepFieldCount(frame)) >= 1) return true;
+    }
+    return false;
+}
+
+/**
+ * Custom-domain boards (e.g. jobs.elastic.co) park the application form behind an
+ * "Apply Now for <role>" CTA that navigates to an embed page. Follow the most
+ * plausible CTA once: visible, NOT header/nav/banner chrome, not a pure "#/" SPA link.
+ * Note: target=_blank CTAs that open a new tab are not chased in v1 — the run reports
+ * "no fields found" and the human finishes manually.
+ */
+async function followApplyCta(page, warnings) {
+    const browser = page.browser();
+    const pagesBefore = new Set((await browser.pages().catch(() => [])));
+
+    const handle = await page.evaluateHandle(() => {
+        const re = /apply/i;
+        const els = Array.from(document.querySelectorAll('a, button, [role="button"]'));
+        let best = null;
+        let bestScore = 0;
+        for (const el of els) {
+            const s = window.getComputedStyle(el);
+            const r = el.getBoundingClientRect();
+            if (s.display === 'none' || s.visibility === 'hidden' || el.disabled) continue;
+            if (r.width < 2 || r.height < 2) continue;
+            const text = (el.innerText || el.getAttribute('aria-label') || '').trim();
+            const href = el.getAttribute('href') || '';
+            if (!re.test(text + ' ' + href)) continue;
+            // SPA-noise rejection: hash-only anchors and absolute "/#..." links navigate nowhere.
+            if (href.trim().startsWith('#')) continue;
+            let resolved = null;
+            try { resolved = new URL(href, window.location.href); } catch (_) { continue; }
+            const pathIsEmpty = resolved.pathname === '/' || resolved.pathname === window.location.pathname;
+            if (pathIsEmpty && resolved.hash) continue; // e.g. "https://site/#/" or "#/apply"
+            let score = 0;
+            if (re.test(text)) score += 2;
+            if (/(form|apply|gh_jid|job)/i.test(href)) score += 3;
+            if (text.length > 8) score += 1; // "Apply Now for IT Support Admin" beats a bare "Apply"
+            // Header/nav banners often hold dead marketing CTAs — penalize, don't hard-exclude:
+            // legitimate CTAs do live in page headers on some boards (e.g. Lever postings).
+            if (el.closest('header, nav, [class*="nav" i], [class*="header" i], [class*="banner" i], [class*="menu" i]')) score -= 3;
+            if (score > bestScore) { bestScore = score; best = el; }
+        }
+        return best;
+    });
+    const el = handle.asElement();
+    if (!el) return { followed: false, page };
+    const href = await el.evaluate((n) => n.getAttribute('href')).catch(() => null);
+    console.log(`[autofill] No form fields on this page — following apply CTA (href=${href || '(click)'}) to reach the application form...`);
+    try {
+        await withWatchdog(el.click({ delay: 40 }), 'click apply CTA', 30000);
+    } catch (e) {
+        warnings.push(`Could not click the apply CTA: ${e.message}`);
+        return { followed: false, page };
+    }
+    // Some boards open the apply flow in a NEW TAB (e.g. SAP SuccessFactors dialog
+    // popups). Detect it and keep filling on the new page.
+    await new Promise((r) => setTimeout(r, 1500));
+    let activePage = page;
+    try {
+        const pagesAfter = await browser.pages();
+        const newPage = pagesAfter.find((p) => !pagesBefore.has(p));
+        if (newPage) {
+            console.log(`[autofill] Apply CTA opened a new tab (${newPage.url().slice(0, 90)}) — continuing there...`);
+            await newPage.bringToFront().catch(() => {});
+            activePage = newPage;
+        }
+    } catch (_) {}
+    await new Promise((r) => setTimeout(r, 1000)); // brief settle; caller re-waits for fields
+    return { followed: true, page: activePage };
+}
+
+/**
+ * A real application form has name/email/phone/resume-type fields. Job pages often
+ * carry a search box or newsletter input — those are NOT form surfaces and must not
+ * stop us from following the apply CTA.
+ */
+async function hasApplicationFields(page) {
+    const frames = listUsableFrames(page);
+    let descriptors = [];
+    try {
+        descriptors = (await collectFieldDescriptorsAllFrames(frames)) || [];
+    } catch (_) { return false; }
+    const pwFrames = new Set(descriptors.filter((d) => d.type === 'password').map((d) => d.frameIdx));
+    return descriptors.some((d) => {
+        if (pwFrames.has(d.frameIdx)) return false; // login/account forms are not application fields
+        const cls = classifyFormField(d);
+        return !cls.skip && cls.key !== 'unknown';
+    });
+}
+
+/**
+ * Shared adapter flow: wait for a rendered form in any frame; if no APPLICATION
+ * fields exist (search boxes and newsletter inputs don't count), follow one apply
+ * CTA (custom-domain boards) and wait again; then fill everything found.
+ * Embed forms (cross-origin iframes) can mount slowly after CTA navigation, so if
+ * the first fill pass finds nothing we wait patiently once more and retry.
+ */
+async function heuristicFillWithCta(ctx) {
+    let { page } = ctx;
+    await waitForAnyFormField(page);
+    if (!(await hasApplicationFields(page))) {
+        const followed = await followApplyCta(page, ctx.warnings);
+        if (followed.followed) {
+            ctx.page = page = followed.page; // the apply flow may have opened a new tab
+            await dismissCookieOverlay(page); // new pages bring new consent banners
+            await waitForAnyFormField(page, 30000);
+            await new Promise((r) => setTimeout(r, 2000));
+        }
+    }
+    await runHeuristicFill(ctx);
+    // An account wall is a terminal state — retrying just re-detects the same wall.
+    const hitAccountWall = (ctx.skippedFields || []).some((s) => String(s).includes('[accountForm]'));
+    if (!hitAccountWall && ctx.filledFields.length + ctx.attachedFiles.length === 0) {
+        console.log('[autofill] Nothing filled yet — embedded forms can mount slowly; retrying once...');
+        await waitForAnyFormField(page, 20000);
+        await new Promise((r) => setTimeout(r, 2000));
+        await runHeuristicFill(ctx);
+    }
+}
+
 async function adaptWorkday(ctx) {
     const { page, warnings, loginWaitSeconds } = ctx;
     const parsed = pipelineInternals().parseWorkdayUrl ? pipelineInternals().parseWorkdayUrl(page.url()) : null;
@@ -519,12 +892,9 @@ async function adaptWorkday(ctx) {
     const wall = await handleLoginWall(ctx.page, loginWaitSeconds, warnings);
     if (wall === 'timeout') { ctx.loginTimedOut = true; return; }
 
-    // Workday renders its apply form client-side — wait for real inputs to appear.
-    await ctx.page.waitForFunction(
-        () => document.querySelectorAll('input:not([type=hidden]), textarea').length >= 2,
-        { timeout: 15000 }
-    ).catch(() => {});
-    await runHeuristicFill(ctx);
+    // Workday renders its apply form client-side; the shared flow waits for real inputs
+    // (in any frame) and falls back to following an apply CTA when none are present.
+    await heuristicFillWithCta(ctx);
     console.log('[autofill] Workday applications are multi-step — fill/review the remaining steps manually.');
 }
 
@@ -533,7 +903,7 @@ async function adaptGreenhouse(ctx) {
     await ctx.page.waitForSelector('#application_form, form', { timeout: 10000 }).catch(() => {});
     const wall = await handleLoginWall(ctx.page, loginWaitSeconds, warnings);
     if (wall === 'timeout') { ctx.loginTimedOut = true; return; }
-    await runHeuristicFill(ctx);
+    await heuristicFillWithCta(ctx);
 }
 
 async function adaptLever(ctx) {
@@ -541,6 +911,8 @@ async function adaptLever(ctx) {
     const formPresent = await page.$('input[name="email"], input[name="name"], input[type="file"]');
     if (!formPresent) {
         const { clicked } = await clickApplyButton(page, [
+            'a.postings-btn.template-btn-submit', // Lever's real apply button
+            'a[href$="/apply"]',                   // Lever postings: <posting-url>/apply
             'a.apply', '.apply-button', 'button[data-test="apply-button"]', 'a[data-qa="show-apply-form"]',
         ], warnings);
         if (clicked) {
@@ -550,7 +922,7 @@ async function adaptLever(ctx) {
     }
     const wall = await handleLoginWall(ctx.page, loginWaitSeconds, warnings);
     if (wall === 'timeout') { ctx.loginTimedOut = true; return; }
-    await runHeuristicFill(ctx);
+    await heuristicFillWithCta(ctx);
 }
 
 async function adaptSeek(ctx) {
@@ -567,17 +939,30 @@ async function adaptSeek(ctx) {
     }
     const wall = await handleLoginWall(ctx.page, loginWaitSeconds, warnings);
     if (wall === 'timeout') { ctx.loginTimedOut = true; return; }
-    await runHeuristicFill(ctx);
+    await heuristicFillWithCta(ctx);
 }
 
 async function adaptGeneric(ctx) {
     const { loginWaitSeconds, warnings } = ctx;
     const wall = await handleLoginWall(ctx.page, loginWaitSeconds, warnings);
     if (wall === 'timeout') { ctx.loginTimedOut = true; return; }
-    await runHeuristicFill(ctx);
+    await heuristicFillWithCta(ctx);
 }
 
-const ADAPTERS = { workday: adaptWorkday, greenhouse: adaptGreenhouse, lever: adaptLever, seek: adaptSeek, generic: adaptGeneric };
+/**
+ * SAP SuccessFactors boards (careers.sap.com, *.successfactors.com, *.sapsf.com):
+ * client-side rendered; the application form sits behind an Apply button and is
+ * frequently iframe-embedded — exactly what the shared CTA-following + all-frame
+ * fill flow handles. Login/account-creation walls are left to the human as usual.
+ */
+async function adaptSap(ctx) {
+    const { loginWaitSeconds, warnings } = ctx;
+    const wall = await handleLoginWall(ctx.page, loginWaitSeconds, warnings);
+    if (wall === 'timeout') { ctx.loginTimedOut = true; return; }
+    await heuristicFillWithCta(ctx);
+}
+
+const ADAPTERS = { workday: adaptWorkday, greenhouse: adaptGreenhouse, lever: adaptLever, seek: adaptSeek, sap: adaptSap, generic: adaptGeneric };
 
 // ---------------------------------------------------------------------------
 // Review wait & gated submit
@@ -612,29 +997,46 @@ async function waitForBrowserReview(seconds) {
 }
 
 async function clickSubmitButton(page, warnings) {
-    try {
-        const handle = await page.evaluateHandle(() => {
-            const re = /^(submit|apply)( application| now| your application)?$/i;
-            const candidates = Array.from(document.querySelectorAll('input[type="submit"], button[type="submit"], button, a'));
-            return candidates.find((el) => {
-                const s = window.getComputedStyle(el);
-                if (s.display === 'none' || s.visibility === 'hidden' || el.disabled) return false;
-                const r = el.getBoundingClientRect();
-                if (r.width < 2 || r.height < 2) return false;
-                const text = String(el.innerText || el.value || '').trim();
-                return re.test(text) || el.type === 'submit';
+    // Forms are often iframe-embedded or shadow-hidden — search every usable frame.
+    for (const frame of listUsableFrames(page)) {
+        try {
+            const handle = await frame.evaluateHandle(() => {
+                // gather across open shadow roots (Workday-style UIs)
+                const collectRoots = (root) => {
+                    const roots = [root];
+                    try {
+                        for (const el of root.querySelectorAll('*')) {
+                            if (el.shadowRoot) roots.push(...collectRoots(el.shadowRoot));
+                        }
+                    } catch (_) {}
+                    return roots;
+                };
+                const candidates = [];
+                for (const r of collectRoots(document)) {
+                    for (const el of r.querySelectorAll('input[type="submit"], button[type="submit"], button, a')) candidates.push(el);
+                }
+                const re = /^(submit|apply)( application| now| your application)?$/i;
+                return candidates.find((el) => {
+                    const s = window.getComputedStyle(el);
+                    if (s.display === 'none' || s.visibility === 'hidden' || el.disabled) return false;
+                    const r = el.getBoundingClientRect();
+                    if (r.width < 2 || r.height < 2) return false;
+                    const text = String(el.innerText || el.value || '').trim();
+                    return re.test(text) || el.type === 'submit';
+                });
             });
-        });
-        const el = handle.asElement();
-        if (!el) { warnings.push('Auto-submit: no submit button found'); return false; }
-        await el.click();
-        await new Promise((r) => setTimeout(r, 2000));
-        console.log('[autofill] Submit button clicked (AUTO_SUBMIT mode).');
-        return true;
-    } catch (e) {
-        warnings.push(`Auto-submit failed: ${e.message}`);
-        return false;
+            const el = handle.asElement();
+            if (!el) continue;
+            await el.click();
+            await new Promise((r) => setTimeout(r, 2000));
+            console.log('[autofill] Submit button clicked (AUTO_SUBMIT mode).');
+            return true;
+        } catch (e) {
+            // try the next frame
+        }
     }
+    warnings.push('Auto-submit: no submit button found');
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -722,6 +1124,7 @@ async function autofillApplication({ jobLink, cvPdfPath, clPdfPath, options = {}
         console.log(`[autofill] Opening ${jobLink} (platform: ${result.platform}) in a visible browser...`);
         await page.goto(jobLink, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await new Promise((r) => setTimeout(r, 1500));
+        await dismissCookieOverlay(page); // consent banners swallow every click we make later
 
         const adapter = ADAPTERS[result.platform] || adaptGeneric;
         await withWatchdog(adapter(ctx), `platform adapter (${result.platform})`, 300000);
@@ -733,7 +1136,9 @@ async function autofillApplication({ jobLink, cvPdfPath, clPdfPath, options = {}
         }
 
         if (!filledFields.length && !attachedFiles.length) {
-            warnings.push('No matching form fields were found — the application form may be multi-step, behind a button, or site-specific. Complete it manually in the browser.');
+            warnings.push(skippedFields.some((s) => String(s).includes('[accountForm]'))
+                ? 'Reached a login/account-creation wall — this employer requires signing in before the application form appears. Complete it manually in the open browser (we never touch passwords); autofill has taken you as far as it safely can.'
+                : 'No matching form fields were found — the application form may be multi-step, behind a button, or site-specific. Complete it manually in the browser.');
         }
 
         const outputDir = options.outputDir || path.join(__dirname, 'output');
@@ -845,4 +1250,12 @@ if (require.main === module) {
     });
 }
 
-module.exports = { autofillApplication, buildFormValueMap, classifyFormField, detectApplyPlatform, markdownToPlainText };
+module.exports = {
+    autofillApplication,
+    buildFormValueMap,
+    classifyFormField,
+    detectApplyPlatform,
+    markdownToPlainText,
+    isUsableFormFrameUrl,
+    resolveCtaHref,
+};
