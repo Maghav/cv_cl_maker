@@ -717,6 +717,21 @@ function cleanAndValidateJobDescription(rawDescription, jobLink, pageTitle = '')
 
     const text = rawDescription.replace(/\r\n/g, '\n').trim();
 
+    // 0. Bot-block / interstitial pages (Cloudflare, Indeed, DataDome...) — never a real JD.
+    //    These often reach the 150-char minimum, so they MUST be caught before anything else.
+    const blockPatterns = [
+        /\b(?:additional verification required|verify you are a human|are you a human)\b/i,
+        /\b(?:checking your browser|just a moment\.\.\.|please wait while we verify)\b/i,
+        /\b(?:access denied|access to this page has been denied|request blocked)\b/i,
+        /\b(?:unusual traffic|robot check|captcha)\b/i,
+        /\b(?:enable javascript and cookies to continue|browser is out of date)\b/i,
+    ];
+    for (const pat of blockPatterns) {
+        if (pat.test(text) || pat.test(pageTitle)) {
+            throw new Error(`The site at ${jobLink} served a bot-protection/interstitial page (detected: "${(text.match(pat) || pageTitle.match(pat) || ['block page'])[0]}"). The board is blocking automated access — open the link in your browser to confirm, or use a different board.`);
+        }
+    }
+
     // 1. Strict Dead / Expired / 404 Job Posting Detection
     const expiredPatterns = [
         /\b(?:job not found|role is no longer available|position is no longer available)\b/i,

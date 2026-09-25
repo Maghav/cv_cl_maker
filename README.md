@@ -173,9 +173,23 @@ After the pipeline generates the CV + cover letter PDFs, it can **pre-fill the j
 | Greenhouse via **custom domain + iframe** (jobs.elastic.co) | ✓ (generic/CTA path) | ✓ CTA followed, iframe form filled, both PDFs attached inside the iframe |
 | Lever (jobs.lever.co) | ✓ | ✓ Apply button followed, 6 fields + resume attached; consent skipped |
 | SAP SuccessFactors (careers.sap.com, *.successfactors.com, *.sapsf.com) | ✓ | ✓ Banner dismissed, CTA followed to the SuccessFactors apply page; stopped safely at the **account/login wall** (SAP requires an account — passwords are never touched) |
-| SEEK | ✓ | Adapter implemented (Apply-button following); live apply flow requires a SEEK login → login-wall path; not live-verified end-to-end |
+| SEEK | ✓ | ✓ Live-verified: Apply button followed → SEEK's **auth0 sign-in wall**; the browser waits for you to sign in, then continues — completing a SEEK application requires your SEEK account by design |
 | Workday (myworkdayjobs.com etc.) | ✓ | Adapter implemented (CXS apply-button click, shadow-DOM piercing); **live apply-flow not yet verified** — tenants vary and some flows did not advance under automation |
 | Any other site | generic | Heuristic fill with all the reachability features above; always human-reviewed |
+
+### Job-page scraping status (JD extraction)
+
+Live-tested with the pipeline's own scraper (`scrapeJobDescription`):
+
+| Board | Status |
+|---|---|
+| SEEK | ✓ Live-verified — real JD extracted (title + company + 2,900+ chars), search-page discovery works too |
+| Greenhouse / Lever / Workday (CXS API) / SAP careers | ✓ Live-verified — full JDs extracted |
+| LinkedIn | ✗ Login-walled — job search requires sign-in; public job-view pages are usually auth-walled |
+| Indeed | ✗ Bot-blocked — serves a Cloudflare/interstitial page. The pipeline now **detects and rejects block pages loudly** instead of generating a CV against a CAPTCHA screen |
+| TradeMe | ✗ Login-walled — job search now requires a TradeMe account even in a normal browser |
+
+Boards that block automation can't be ethically worked around — if a link fails to scrape, the pipeline stops with a clear error naming the cause.
 
 ### Safety model
 - **Never submits by default.** Submit is only clicked when **both** `AUTO_SUBMIT=true` (env) **and** `--submit` (CLI) are set. Both must be on — one is never enough.
