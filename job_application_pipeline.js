@@ -904,6 +904,76 @@ async function scrapeWorkdayJob(jobLink) {
     };
 }
 
+function parseBambooHrUrl(jobUrl) {
+    try {
+        const u = new URL(jobUrl);
+        const host = u.hostname.toLowerCase();
+        // Tenant subdomain is mandatory: <company>.bamboohr.com/careers/<numeric id>
+        if (!host.endsWith('.bamboohr.com') || host === 'bamboohr.com') return null;
+        const m = u.pathname.match(/\/careers\/(\d+)/);
+        if (m) {
+            return {
+                company: host.split('.')[0],
+                jobId: m[1],
+                detailUrl: `https://${u.hostname}/careers/${m[1]}/detail`,
+                companyInfoUrl: `https://${u.hostname}/careers/company-info`,
+            };
+        }
+    } catch (_) {}
+    return null;
+}
+
+async function scrapeBambooHrJob(jobLink) {
+    const parsed = parseBambooHrUrl(jobLink);
+    if (!parsed) return null;
+
+    const headers = {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Referer': jobLink,
+    };
+
+    log(`Attempting BambooHR careers API fetch: ${parsed.detailUrl}`);
+    const res = await fetch(parsed.detailUrl, { headers });
+    if (!res.ok) {
+        throw new Error(`BambooHR detail API returned HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    const opening = (data && data.result && data.result.jobOpening) || {};
+    if (opening.jobOpeningStatus && String(opening.jobOpeningStatus).toLowerCase() !== 'open') {
+        throw new Error(`BambooHR job ${parsed.jobId} is not open (status: "${opening.jobOpeningStatus}")`);
+    }
+    const description = htmlToPlainText(opening.description || '');
+    if (!description || description.length < 50) {
+        throw new Error('BambooHR detail API returned empty job description');
+    }
+
+    const jobTitle = String(opening.jobOpeningName || '').trim() || 'Position';
+
+    // The careers API is per-tenant — company-info carries the display employer name.
+    let companyName = '';
+    try {
+        const cRes = await fetch(parsed.companyInfoUrl, { headers });
+        if (cRes.ok) {
+            const cData = await cRes.json();
+            companyName = String((cData && cData.result && cData.result.name) || '').trim();
+        }
+    } catch (_) {}
+    if (!companyName) {
+        companyName = parsed.company.charAt(0).toUpperCase() + parsed.company.slice(1);
+    }
+
+    const cleanedDescription = cleanAndValidateJobDescription(description, jobLink, jobTitle);
+    log(`✓ BambooHR API scraped ${cleanedDescription.length} chars (title="${jobTitle}", company="${companyName}")`);
+    return {
+        description: cleanedDescription,
+        companyName,
+        jobTitle,
+        platform: 'bamboohr'
+    };
+}
+
 async function scrapeJobDescription(jobLink, browserInstance) {
     log(`Scraping job description: ${jobLink} [${detectPlatform(jobLink)}]`);
 
@@ -916,6 +986,19 @@ async function scrapeJobDescription(jobLink, browserInstance) {
             }
         } catch (wdErr) {
             log(`Workday CXS API fetch failed (${wdErr.message}) — falling back to browser scraping...`);
+        }
+    }
+    // BambooHR fast-path: tenant careers JSON API. The public page is a client-rendered
+    // SPA that can keep <body> empty for several seconds, which makes browser scraping
+    // a render-timing race — the API is deterministic (title, status, description).
+    if (jobLink && jobLink.includes('bamboohr.com')) {
+        try {
+            const bhResult = await scrapeBambooHrJob(jobLink);
+            if (bhResult && bhResult.description && bhResult.description.length >= 100) {
+                return bhResult;
+            }
+        } catch (bhErr) {
+            log(`BambooHR API fetch failed (${bhErr.message}) — falling back to browser scraping...`);
         }
     }
     const shouldClose = !browserInstance;
@@ -982,6 +1065,18 @@ async function scrapeJobDescription(jobLink, browserInstance) {
             const el = document.querySelector('[data-automation-id="jobPostingDescription"], [data-automation="jobAdDetails"], [data-automation="jobDescription"], article, main, #content, .job-description');
             return (el && el.innerText.trim().length > 100) || (document.body && document.body.innerText.trim().length > 200);
         }, { timeout: 8000 }).catch(() => {});
+        // Some SPA career boards (BambooHR, embedded Workday, etc.) keep <body> empty for
+        // several seconds after domcontentloaded — give them one longer, content-only wait
+        // instead of scraping an empty shell and failing with "content is empty or too short".
+        const earlyBodyLen = await page.evaluate(() => (document.body ? document.body.innerText.trim().length : 0)).catch(() => 0);
+        if (earlyBodyLen < 200) {
+            log(`Page body nearly empty after load (${earlyBodyLen} chars) — waiting up to 15s more for SPA render...`);
+            await page.waitForFunction(
+                () => document.body && document.body.innerText.trim().length > 200,
+                { timeout: 15000 }
+            ).catch(() => {});
+            await new Promise(r => setTimeout(r, 1000));
+        }
         await new Promise(r => setTimeout(r, 1000));
 
         // Try to dismiss common popups/cookie banners
@@ -3161,6 +3256,8 @@ module.exports._internals = {
     scrapeJobDescription,
     scrapeWorkdayJob,
     parseWorkdayUrl,
+    scrapeBambooHrJob,
+    parseBambooHrUrl,
 };
 
 // CLI entry when run directly

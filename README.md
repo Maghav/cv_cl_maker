@@ -185,6 +185,7 @@ Live-tested with the pipeline's own scraper (`scrapeJobDescription`):
 |---|---|
 | SEEK | ✓ Live-verified — real JD extracted (title + company + 2,900+ chars), search-page discovery works too |
 | Greenhouse / Lever / Workday (CXS API) / SAP careers | ✓ Live-verified — full JDs extracted |
+| BambooHR (*.bamboohr.com/careers/<id>) | ✓ Live-verified — deterministic via the tenant careers JSON API (`/careers/<id>/detail`); the public page is a slow client-rendered SPA, so the API fast-path avoids the render race, with the hardened SPA wait as fallback |
 | LinkedIn | ✗ Login-walled — job search requires sign-in; public job-view pages are usually auth-walled |
 | Indeed | ✗ Bot-blocked — serves a Cloudflare/interstitial page. The pipeline now **detects and rejects block pages loudly** instead of generating a CV against a CAPTCHA screen |
 | TradeMe | ✗ Login-walled — job search now requires a TradeMe account even in a normal browser |
